@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Watermark Remover</title>
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+</head>
+<body>
+    <div class="container">
+        <h1 class="mt-5">PDF Watermark Remover</h1>
+        <form id="upload-form" class="mt-5" action="upload" method="post" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="file">Upload PDF</label>
+                <input type="file" class="form-control-file" id="file" name="file" accept=".pdf">
+            </div>
+            <button type="submit" class="btn btn-primary">Remove Watermark</button>
+        </form>
+    </div>
+    <!-- jQuery and Bootstrap Bundle (includes Popper) -->
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

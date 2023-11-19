@@ -48,7 +48,7 @@ source .venv/bin/activate
 On Windows, run:
 
 ```
-.venv\Scriptsctivate
+.venv\Scripts\Activate
 ```
 
 4. Install the required packages:

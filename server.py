@@ -1,6 +1,6 @@
 from flask import Flask, request, send_file, render_template_string, redirect
 import os, uuid
-from remove_wartermark import remove_watermark
+from remove_watermark import remove_watermark
 import asyncio
 
 app = Flask(__name__)

@@ -1,6 +1,7 @@
 from flask import Flask, request, send_file, render_template_string, redirect
 import os, uuid
 from remove_wartermark import remove_watermark
+import asyncio
 
 app = Flask(__name__)
 APP_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
@@ -20,7 +21,12 @@ def upload_file():
     input_file = os.path.join(APP_FOLDER, 'input_' + filename + '.pdf')
     output_file = os.path.join(APP_FOLDER, 'output_' + filename + '.pdf')
     file.save(input_file)
-    remove_watermark(input_file, output_file)
+
+    # 使用 run_in_executor 運行異步函數
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(remove_watermark(input_file, output_file))
+
     return send_file(output_file)
 
 @app.route('/', methods=['GET'])
@@ -28,4 +34,4 @@ def index():
     return render_template_string(open('index.html').read())
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5566)

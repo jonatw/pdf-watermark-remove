@@ -6,6 +6,6 @@ services:
     restart: always
     build: .
     ports:
-      - "5566:5000"
+      - "5566:5566"
     volumes:
       - ./data:/app/data

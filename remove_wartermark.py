@@ -1,7 +1,18 @@
-import fitz, re
+import fitz, asyncio
 
-def remove_watermark(input_file, output_file):
+async def remove_watermark_from_page(page, most_frequent):
+    page.clean_contents()
+    xref = page.get_contents()[0]
+    cont = bytearray(page.read_contents())
+    while True:
+        i1 = cont.find(most_frequent)
+        if i1 < 0: break
+        cont[i1 : i1+len(most_frequent)] = b""
+    page.parent.update_stream(xref, cont)
+
+async def remove_watermark(input_file, output_file):
     doc = fitz.open(input_file)
+
     def most_frequent_substring_with_pattern(byte_array, pattern, length):
         count = {}
         pattern_length = len(pattern)
@@ -18,7 +29,6 @@ def remove_watermark(input_file, output_file):
                 i += pattern_length
             else:
                 i += 1
-
         # Find the most frequent substring
         most_frequent = max(count, key=count.get)
         return most_frequent, count[most_frequent]
@@ -29,13 +39,8 @@ def remove_watermark(input_file, output_file):
     pattern = b" Td\n<"
     length = 100    
     most_frequent, frequency = most_frequent_substring_with_pattern(cont, pattern, length)
-    for page in doc:
-        page.clean_contents()
-        xref = page.get_contents()[0]
-        cont = bytearray(page.read_contents())
-        while True:
-            i1 = cont.find(most_frequent)
-            if i1 < 0: break
-            cont[i1 : i1+len(most_frequent)] = b""
-        doc.update_stream(xref, cont)
+
+    tasks = [remove_watermark_from_page(page, most_frequent) for page in doc]
+    await asyncio.gather(*tasks)
+
     doc.ez_save(output_file)

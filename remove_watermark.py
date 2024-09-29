@@ -47,28 +47,21 @@ async def remove_watermark_by_common_str(input_file, output_file):
 
 async def remove_watermark_by_xref(input_file, output_file):
     doc = fitz.open(input_file)
+    def get_target_xref_at_first_page(doc):
+        xref_width_pattern = 2360
+        xref_height_pattern = 1640
+        target_xref = None
+        image_list = doc[0].get_image_info(xrefs=True)
+        for image_info in image_list:
+            if image_info['width'] == xref_width_pattern and image_info['height'] == xref_height_pattern:
+                target_xref =image_info['xref']
+        return target_xref
 
-    def most_frequent_xref_among_pages(doc):
-        xref_count = {}
-        max_search_count = min(doc.page_count, 6)
-        for index in range(max_search_count):
-            page = doc[index]
-            image_info = page.get_image_info(xrefs=True)
-            for info in image_info:
-                xref = info['xref']
-                xref_count[xref] = xref_count.get(xref, 0) + 1
-
-        if not xref_count:
-            return None
-
-        most_common_xref = max(xref_count, key=xref_count.get)
-        return most_common_xref
-
-    most_common_xref = most_frequent_xref_among_pages(doc)
-    if not most_common_xref:
+    target_xref = get_target_xref_at_first_page(doc)
+    if not target_xref:
         return
     else:
-        doc[0].delete_image(most_common_xref)
+        doc[0].delete_image(target_xref)
         doc.ez_save(output_file)
 
 async def remove_watermark(input_file, output_file):

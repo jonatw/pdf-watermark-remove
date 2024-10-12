@@ -48,17 +48,21 @@ async def remove_watermark_by_common_str(input_file, output_file):
 async def remove_watermark_by_xref(input_file, output_file):
     doc = fitz.open(input_file)
     def get_target_xref_at_first_page(doc):
-        xref_width_pattern = 2360
-        xref_height_pattern = 1640
+        xref_patterns = [
+            {'height': 2360, 'width': 1640},
+            {'height': 1640, 'width': 2360}
+        ]
         target_xref = None
         image_list = doc[0].get_image_info(xrefs=True)
         for image_info in image_list:
-            if image_info['width'] == xref_width_pattern and image_info['height'] == xref_height_pattern:
-                target_xref =image_info['xref']
+            for xref_pattern in xref_patterns:
+                if image_info['width'] == xref_pattern['width'] and image_info['height'] == xref_pattern['height']:
+                    target_xref =image_info['xref']
         return target_xref
 
     target_xref = get_target_xref_at_first_page(doc)
     if not target_xref:
+        # print('no target_xref found, do nothing.')
         return
     else:
         doc[0].delete_image(target_xref)

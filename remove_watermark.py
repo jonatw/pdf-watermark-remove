@@ -1,49 +1,89 @@
-import fitz, asyncio
+import fitz
+import asyncio
+import re
+from collections import Counter
 
-async def remove_watermark_from_page(page, most_frequent):
-    page.clean_contents()
-    xref = page.get_contents()[0]
-    cont = bytearray(page.read_contents())
-    while True:
-        i1 = cont.find(most_frequent)
-        if i1 < 0: break
-        cont[i1 : i1+len(most_frequent)] = b""
-    page.parent.update_stream(xref, cont)
+def most_frequent_text_tj_substring(doc, window=300, min_length=30):
+    counter = Counter()
+    for page in doc:
+        for xref in page.get_contents():
+            content = doc.xref_stream(xref)
+            i = 0
+            while i < len(content):
+                if content[i:i+1] == b'(':
+                    end = content.find(b') Tj', i)
+                    if end != -1 and end - i < window:
+                        substring = content[i:end+4]
+                        if len(substring) >= min_length:
+                            counter[substring] += 1
+                        i = end + 4
+                        continue
+                if content[i:i+1] == b'<':
+                    end = content.find(b'> Tj', i)
+                    if end != -1 and end - i < window:
+                        substring = content[i:end+4]
+                        if len(substring) >= min_length:
+                            counter[substring] += 1
+                        i = end + 4
+                        continue
+                if content[i:i+1] == b'[':
+                    end = content.find(b'] TJ', i)
+                    if end != -1 and end - i < window:
+                        substring = content[i:end+5]
+                        if len(substring) >= min_length:
+                            counter[substring] += 1
+                        i = end + 5
+                        continue
+                i += 1
+    if not counter:
+        return None, 0
+
+    print("Top 5 candidates (min length applied):")
+    for s, c in counter.most_common(5):
+        try:
+            print(f"  {s.decode('utf-8', errors='replace')} x {c}")
+        except:
+            print(f"  {s[:60]}... x {c}")
+
+    return counter.most_common(1)[0]
+
+async def remove_watermark_from_page(doc, page_number, target_str):
+    page = doc[page_number]
+    replaced = 0
+    for xref in page.get_contents():
+        raw = doc.xref_stream(xref)
+        raw_str = raw.decode("latin1")
+
+        blocks = re.findall(r"q\s+.*?Q", raw_str, flags=re.DOTALL)
+        for block in blocks:
+            if target_str in block:
+                raw_str = raw_str.replace(block, "")
+                replaced += 1
+        if replaced:
+            # print(f"Page {page_number}: removed {replaced} block(s)")
+            doc.update_stream(xref, raw_str.encode("latin1"))
 
 async def remove_watermark_by_common_str(input_file, output_file):
     doc = fitz.open(input_file)
+    most_common, freq = most_frequent_text_tj_substring(doc, min_length=30)
 
-    def most_frequent_substring_with_pattern(byte_array, pattern, length):
-        count = {}
-        pattern_length = len(pattern)
-        i = 0
+    if not most_common or freq < 1:
+        print("No watermark pattern detected.")
+        return
 
-        while i < len(byte_array) - pattern_length:
-            # Find the occurrence of the pattern
-            if byte_array[i:i + pattern_length] == pattern:
-                # Extract the substring of the desired length after the pattern
-                substring = bytes(byte_array[i:i + pattern_length + length])
-                # Count the frequency
-                count[substring] = count.get(substring, 0) + 1
-                # Move past this occurrence
-                i += pattern_length
-            else:
-                i += 1
-        # Find the most frequent substring
-        most_frequent = max(count, key=count.get)
-        return most_frequent, count[most_frequent]
-    page = doc[0]
-    page.clean_contents()
-    xref = page.get_contents()[0]
-    cont = bytearray(page.read_contents())
-    pattern = b" Td\n<"
-    length = 100    
-    most_frequent, frequency = most_frequent_substring_with_pattern(cont, pattern, length)
+    try:
+        target_str = most_common.decode('latin1').strip()
+    except:
+        target_str = most_common.hex()
 
-    tasks = [remove_watermark_from_page(page, most_frequent) for page in doc]
+    print(f"\nDetected watermark (freq={freq}):")
+    print(target_str)
+
+    # 平行處理每頁
+    tasks = [remove_watermark_from_page(doc, page.number, target_str) for page in doc]
     await asyncio.gather(*tasks)
 
-    doc.ez_save(output_file)
+    doc.save(output_file, garbage=4, deflate=True, clean=True)
 
 async def remove_watermark_by_xref(input_file, output_file):
     doc = fitz.open(input_file)
@@ -52,25 +92,21 @@ async def remove_watermark_by_xref(input_file, output_file):
             {'height': 2360, 'width': 1640},
             {'height': 1640, 'width': 2360}
         ]
-        target_xref = None
         image_list = doc[0].get_image_info(xrefs=True)
         for image_info in image_list:
-            for xref_pattern in xref_patterns:
-                if image_info['width'] == xref_pattern['width'] and image_info['height'] == xref_pattern['height']:
-                    target_xref =image_info['xref']
-        return target_xref
+            for pattern in xref_patterns:
+                if image_info['width'] == pattern['width'] and image_info['height'] == pattern['height']:
+                    return image_info['xref']
+        return None
 
     target_xref = get_target_xref_at_first_page(doc)
-    if not target_xref:
-        # print('no target_xref found, do nothing.')
-        return
-    else:
+    if target_xref:
         doc[0].delete_image(target_xref)
         doc.ez_save(output_file)
 
 async def remove_watermark(input_file, output_file):
     doc = fitz.open(input_file)
-    if 'Version' in doc.metadata['producer']:
+    if 'Version' in doc.metadata.get('producer', ''):
         await remove_watermark_by_xref(input_file, output_file)
     else:
         await remove_watermark_by_common_str(input_file, output_file)

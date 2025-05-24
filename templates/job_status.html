@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PDF Watermark Remover - Job Status</title>
+    <meta http-equiv="refresh" content="5">
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        h1 { color: #333; }
+        .status { margin-top: 30px; }
+        .button { background: #007bff; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px; border: none; cursor: pointer; }
+        .button.back { background: #6c757d; margin-left: 10px; }
+    </style>
+</head>
+<body>
+    <h1>PDF Watermark Remover - Job Status</h1>
+    <div class="status">
+        <p>Status: {{ job.status }}</p>
+        <p>Progress: {{ job.progress }}</p>
+        {% if job.error %}
+        <p>Error: {{ job.error }}</p>
+        {% endif %}
+        <p>Job ID: {{ job.id }}</p>
+        <p>Created: {{ job.created|format_time }}</p>
+        <p>Updated: {{ job.updated|format_time }}</p>
+    </div>
+    {% if job.status == "completed" %}
+    <a href="{{ url_for('download_file', job_id=job.id) }}" class="button">Download Processed File</a>
+    {% endif %}
+    <a href="{{ url_for('index') }}" class="button back">Back to Home</a>
+</body>
+</html>

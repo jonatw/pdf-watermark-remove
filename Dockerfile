@@ -10,11 +10,11 @@ ADD . /app
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Make port 5000 available to the world outside this container
-EXPOSE 5000
+# Expose the web server port (Flask default: 5566)
+EXPOSE 5566
 
 # Define mountable directories
 VOLUME ["/app/data"]
 
-# Run app.py when the container launches
+# Run server.py when the container launches
 CMD ["python", "server.py"]

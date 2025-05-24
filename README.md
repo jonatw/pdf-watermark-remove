@@ -1,151 +1,111 @@
 # PDF Watermark Remover
 
-This project provides tools to remove watermarks from PDF files. It includes both a web server for processing PDF uploads and a command-line interface (CLI) for local file processing.
+Remove watermarks from PDF files, supporting both image-based and text-based watermarks. Provides a command-line interface (CLI) and a web service for batch and remote processing.
+
+---
 
 ## Features
 
-* **Dual Interface:** Offers both a web server and a CLI for flexibility.
-* **Adaptive Watermark Removal:** Employs two distinct strategies to remove watermarks based on PDF metadata and content analysis.
-* **Dockerized Server:** The server component can be easily deployed using Docker.
+| Feature                                 | Description                                              |
+|------------------------------------------|----------------------------------------------------------|
+| Automatic Detection & Removal            | Detects and removes watermarks automatically             |
+| Image & Text Watermark Support           | Handles both image and text watermarks                   |
+| CLI & Web Service                        | Command-line and web UI for flexible usage               |
+| Batch & Recursive Processing             | Batch process directories, with optional recursion       |
+| Parallel Processing                      | Accelerate with multi-process parallelism                |
+| Config File Support (YAML)               | Flexible configuration via YAML file                     |
+| Progress Reporting                       | Detailed progress output                                 |
+| Logging & Log Rotation                   | Console/file logging with rotation and filtering         |
+| Robust Error Handling                    | Custom exceptions for various error scenarios            |
+| Unit Tests                               | Comprehensive unit tests                                 |
 
-## How It Works: Watermark Removal Strategies
+---
 
-The core watermark removal logic dynamically chooses a strategy based on the PDF's metadata.
+## Installation
 
-1.  **XRef Image Removal:**
-    * **Trigger:** Activated if the `producer` field in the PDF's metadata contains the string "Version".
-    * **Algorithm:**
-        1.  Scans images on the first page of the PDF.
-        2.  Identifies potential watermark images by matching their dimensions to common watermark sizes (2360×1640 or 1640×2360 pixels).
-        3.  Deletes the identified image using its Cross-Reference (XRef) ID.
-        4.  Saves the modified document.
-    * **Pros:** Fast and highly effective for image-based watermarks with known, fixed dimensions.
-    * **Cons:** Limited to image watermarks that match the predefined dimensions.
+```bash
+# Clone repository
+git clone https://github.com/yourusername/pdf-watermark-remove.git
+cd pdf-watermark-remove
 
-2.  **Common String Removal:**
-    * **Trigger:** Used if the conditions for XRef Image Removal are not met.
-    * **Algorithm:**
-        1.  Reads the content stream of the first page.
-        2.  Identifies the most frequently occurring substring (default length: 100 characters) that follows the pattern `b" Td\n<"`. This pattern is often associated with text-based watermarks.
-        3.  Removes all instances of this identified substring from the content stream of each page. This process is parallelized for efficiency.
-        4.  Saves the modified document.
-    * **Pros:** Capable of removing text-based watermarks even if they are not defined as fixed-size images.
-    * **Cons:** The effectiveness can depend on the chosen pattern and substring length. There's a potential risk of removing legitimate content if its structure coincidentally matches the watermark pattern.
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-## Code Structure
+# Install dependencies
+pip install -r requirements.txt
+```
 
-The project is organized into three main Python scripts:
-
-* `server.py`: Implements the web server using Flask (or a similar framework) to handle PDF uploads and serve processed files.
-* `cli.py`: Provides the command-line interface for direct PDF processing.
-* `remove_watermark.py`: Contains the core logic for both watermark removal strategies. Both `server.py` and `cli.py` utilize this module.
-
-```mermaid
-flowchart TD
-    subgraph CLI [cli.py]
-        A["main()"] --> B["async_main()"]
-        B --> C[/remove_watermark&#40;input, output&#41;/]
-    end
-
-    subgraph Server [server.py]
-        D["index()"] --> E["upload_file()"]
-        E --> C
-    end
-
-    subgraph Core [remove_watermark.py]
-        C --> F{"'Version' in producer?"}
-        F -- "Yes" --> G[/remove_watermark_by_xref&#40;&#41;/]
-        F -- "No" --> H[/remove_watermark_by_common_str&#40;&#41;/]
-        G --> I[/get_target_xref_at_first_page&#40;&#41;/]
-        H --> J[/most_frequent_substring_with_pattern&#40;&#41;/]
-        H --> K[/remove_watermark_from_page&#40;&#41;/]
-    end
-````
-
-## Getting Started
-
-Follow these steps to set up the project for local development or CLI usage.
-
-### Prerequisites
-
-  * Python 3.11 (Download from [python.org](https://www.python.org/downloads/) if not installed)
-
-### Local Development Setup
-
-1.  **Clone the repository (if you haven't already):**
-
-    ```bash
-    git clone git@github.com:jonatw/pdf-watermark-remove.git
-    cd pdf-watermark-remove
-    ```
-
-2.  **Create a virtual environment:**
-    This isolates project dependencies.
-
-    ```bash
-    python3 -m venv .venv
-    ```
-
-3.  **Activate the virtual environment:**
-
-      * On macOS and Linux:
-        ```bash
-        source .venv/bin/activate
-        ```
-      * On Windows:
-        ```bash
-        .\.venv\Scripts\Activate
-        ```
-
-4.  **Install dependencies:**
-
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-    You are now ready for local development or to use the CLI script.
+---
 
 ## Usage
 
-### Command-Line Interface (CLI)
+### Command-Line Interface
 
-The CLI script processes a PDF file and saves the output in the same directory, appending "\_no\_watermark" to the original filename.
-
-**Command:**
+Basic usage:
 
 ```bash
-python cli.py <path_to_your_file.pdf>
+python cli.py /path/to/your/document.pdf
 ```
 
-**Example:**
-If you have a file named `mydocument.pdf`, run:
+This creates an output file named `document_no_watermark.pdf` in the same directory.
+
+#### Advanced Options
 
 ```bash
-python cli.py mydocument.pdf
+python cli.py document.pdf --out output.pdf --config config.yaml
 ```
 
-This will generate a new file named `mydocument_no_watermark.pdf` in the same directory.
+### Web Server
 
-### Server (via Docker)
+Start the server:
 
-The server provides an endpoint to upload a PDF, which then returns the processed file.
+```bash
+python server.py
+```
 
-1.  **Build the Docker image:**
-    From the project's root directory, run:
+Visit [http://localhost:5566](http://localhost:5566) in your browser to upload PDF files for watermark removal.
 
-    ```bash
-    docker-compose build
-    ```
+- **Job Status:** After upload, the web UI shows job progress and any errors encountered.
+- **Unified Logic:** The server now uses the exact same watermark removal logic as the CLI (via `remove_watermark` in `remove_watermark.py`). There is no code duplication; all PDF processing is consistent across both interfaces.
 
-2.  **Run the Docker container:**
-    This command starts the server in detached mode.
+#### Configuration
 
-    ```bash
-    docker-compose up -d
-    ```
+Both CLI and server accept a YAML config file for advanced options. The server will use the config file if specified at startup.
 
-3.  **Access the server:**
+---
 
-      * The server will be running at `http://127.0.0.1:5566`.
-      * To process a file, send a POST request with the PDF file to the `/upload` endpoint (e.g., using a tool like Postman or a simple HTML form).
-      * The server will respond with the watermark-removed PDF file.
+## Configuration & Environment Variables
+
+| Variable                           | Description                                | Default         |
+|-------------------------------------|--------------------------------------------|-----------------|
+| PDF_WATERMARK_LOG_LEVEL             | Logging level                              | INFO            |
+| PDF_WATERMARK_LOG_FILE              | Log file path                              | (none)          |
+| PDF_WATERMARK_MAX_CONCURRENT_PAGES  | Max concurrent page processing             | 8               |
+| PDF_WATERMARK_TEMP_DIR              | Temp file directory                        | data            |
+| PDF_WATERMARK_SERVER_HOST           | Server host                                | 0.0.0.0         |
+| PDF_WATERMARK_SERVER_PORT           | Server port                                | 5566            |
+| PDF_WATERMARK_PARALLEL_PROCESSES    | Default parallel worker count              | 1               |
+
+---
+
+## Core Classes & Structure
+
+| File/Class             | Purpose                                            |
+|-----------------------|----------------------------------------------------|
+| `remove_watermark.py` | Core watermark removal logic (shared by CLI/server)|
+| `strategies.py`       | Watermark removal strategies (image/text)          |
+| `config.py`           | Configuration management (YAML/env support)        |
+| `exceptions.py`       | Custom exceptions                                  |
+| `cli.py`              | Command-line interface                             |
+| `server.py`           | Web service interface                              |
+| `logging_utils.py`    | Logging utilities                                  |
+| `test_pdf.py`         | PDF test utilities                                 |
+| `tests.py`            | Unit tests                                         |
+| `verify_refactoring.py`| Refactoring verification tools                     |
+
+---
+
+## License
+
+MIT

@@ -1,0 +1,49 @@
+# PDF Watermark Remover Configuration
+
+# Version information
+VERSION: "2.0.0"
+
+# Logging configuration
+LOG_LEVEL: "INFO"
+LOG_FORMAT: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+LOG_FILE: null  # Set to a file path to enable file logging
+
+# PDF processing settings
+MAX_CONCURRENT_PAGES: 8
+
+# Watermark detection
+MIN_PATTERN_LENGTH: 30   # Minimum length for a text pattern to be considered a watermark
+PATTERN_SEARCH_WINDOW: 300  # Maximum window size to search for text patterns
+
+# XRef strategy settings
+WATERMARK_PATTERNS:
+  - width: 2360
+    height: 1640
+  - width: 1640
+    height: 2360
+XREF_PRODUCER_PATTERNS:
+  - "Version"  # Only "Version" in producer triggers XRef strategy
+
+# Text strategy settings
+TEXT_PATTERN: "("  # Initial byte pattern to search for text watermarks
+TEXT_PATTERN_LENGTH: 30  # Length of substring to extract after pattern
+
+# File handling
+ALLOWED_EXTENSIONS:
+  - pdf
+MAX_FILE_SIZE: 134217728  # 128 MB (128 * 1024 * 1024)
+TEMP_DIR: "data"
+
+# Server settings
+SERVER_HOST: "0.0.0.0"
+SERVER_PORT: 5566
+UPLOAD_ENDPOINT: "/upload"
+
+# CLI settings
+DEFAULT_OUTPUT_SUFFIX: "_no_watermark"
+
+# Batch processing
+BACKUP_ENABLED: false
+OVERWRITE_ENABLED: false
+RECURSIVE_ENABLED: false
+DEFAULT_PARALLEL_PROCESSES: 1

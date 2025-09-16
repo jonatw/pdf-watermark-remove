@@ -65,10 +65,47 @@ class Config:
         "MIN_PATTERN_LENGTH": 30,   # Minimum length for a text pattern to be considered a watermark
         "PATTERN_SEARCH_WINDOW": 300,  # Maximum window size to search for text patterns
         
-        # XRef strategy settings
+        # XRef strategy settings - iPad Screen Resolutions
         "WATERMARK_PATTERNS": [
+            # iPad Pro 13" (M4, 2024)
+            {"width": 2752, "height": 2064},
+            {"width": 2064, "height": 2752},
+
+            # iPad Pro 11" (M4, 2024)
+            {"width": 2420, "height": 1668},
+            {"width": 1668, "height": 2420},
+
+            # iPad Pro 12.9" (M1/M2, 3rd-6th gen)
+            {"width": 2732, "height": 2048},
+            {"width": 2048, "height": 2732},
+
+            # iPad Pro 11" (M1/M2/A12X/A12Z, 1st-4th gen)
+            {"width": 2388, "height": 1668},
+            {"width": 1668, "height": 2388},
+
+            # iPad Air 11" (M1/M2/A14, 4th-6th gen) & iPad (A14, 10th gen)
             {"width": 2360, "height": 1640},
-            {"width": 1640, "height": 2360}
+            {"width": 1640, "height": 2360},
+
+            # iPad mini (A15/A17 Pro, 6th-7th gen)
+            {"width": 2266, "height": 1488},
+            {"width": 1488, "height": 2266},
+
+            # iPad Pro 10.5" & iPad Air (A12, 3rd gen)
+            {"width": 2224, "height": 1668},
+            {"width": 1668, "height": 2224},
+
+            # iPad (A10/A12/A13, 7th-9th gen)
+            {"width": 2160, "height": 1620},
+            {"width": 1620, "height": 2160},
+
+            # iPad Pro 9.7" & Standard iPad (A5X-A10, 3rd-6th gen) & iPad Air 1-2
+            {"width": 2048, "height": 1536},
+            {"width": 1536, "height": 2048},
+
+            # Legacy iPad & iPad mini 1st gen (commented out - unlikely to generate modern watermarks)
+            # {"width": 1024, "height": 768},
+            # {"width": 768, "height": 1024},
         ],
         "XREF_PRODUCER_PATTERNS": ["Version"],  # Only "Version" in producer triggers XRef strategy
         

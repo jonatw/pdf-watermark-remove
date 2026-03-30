@@ -175,7 +175,7 @@ class WatermarkRemover:
                     f.write(new_data)
                 logger.debug("Stripped PDF /ID arrays")
         except Exception as e:
-            logger.warning(f"Could not strip PDF /ID: {e}")
+            logger.warning("Could not strip PDF /ID: %s", e)
 
     def _sanitize_metadata(self, file_path: Path):
         """
@@ -209,7 +209,7 @@ class WatermarkRemover:
 
             logger.info("Metadata sanitized: dates truncated, XMP cleared, producer generalized, /ID stripped")
         except Exception as e:
-            logger.warning(f"Could not sanitize metadata: {e}")
+            logger.warning("Could not sanitize metadata: %s", e)
 
     def _select_strategy(self, doc: fitz.Document) -> WatermarkRemovalStrategy:
         """
@@ -223,7 +223,7 @@ class WatermarkRemover:
         """
         for strategy in self.strategies:
             if strategy.can_handle(doc):
-                logger.info(f"Selected strategy: {strategy.__class__.__name__}")
+                logger.info("Selected strategy: %s", strategy.__class__.__name__)
                 return strategy
 
         # This should never happen as CommonStringRemovalStrategy handles all
@@ -268,12 +268,10 @@ class WatermarkRemover:
             raise InvalidPDFError(f"Input file is not a PDF: {input_file}")
 
         try:
-            # Open document to determine strategy
+            # Open document once — passed to strategy, closed here
             progress.update("Analyzing PDF", 5)
             doc = fitz.open(str(input_path))
-
-            # Log document metadata
-            logger.info(f"Document metadata: {doc.metadata}")
+            logger.info("Document metadata: %s", doc.metadata)
 
             # Check if PDF is rasterized-only (e.g. browser print-to-PDF)
             if self._is_rasterized_only(doc):
@@ -288,24 +286,22 @@ class WatermarkRemover:
                 )
                 return False
 
-            # Update progress
-            progress.update("Selecting strategy", 10)
-
             # Select strategy via can_handle() chain: XRef > OCG > CommonString
+            progress.update("Selecting strategy", 10)
             strategy = self._select_strategy(doc)
             strategy_name = strategy.__class__.__name__
 
-            doc.close()
-
-            progress.update(f"Processing with {strategy_name} strategy", 15)
+            progress.update("Processing with %s strategy" % strategy_name, 15)
             result = await strategy.remove(
-                input_path,
+                doc,
                 output_path,
                 lambda s, p: progress.update(
                     s,
                     15 + int(p * 75)
                 )
             )
+
+            doc.close()
 
             if result:
                 progress.update("Sanitizing metadata", 93)
@@ -315,7 +311,7 @@ class WatermarkRemover:
             return result
 
         except Exception as e:
-            logger.error(f"Error removing watermark: {str(e)}")
+            logger.error("Error removing watermark: %s", e)
             raise
 
 # Convenience function for backward compatibility

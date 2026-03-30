@@ -186,9 +186,11 @@ PDFWatermarkRemoverError
 
 ### When modifying watermark strategies
 - Strategy selection uses `_select_strategy()` which iterates strategies in priority order calling `can_handle()`. To add a new strategy: implement `can_handle()` and `remove()`, insert into `self.strategies` list at the desired priority position.
+- `remove()` receives an already-opened `fitz.Document` object — the caller (`WatermarkRemover`) manages open/close. Strategies save to `output_file` but do NOT close the doc.
+- `OCGWatermarkRemovalStrategy.can_handle()` caches xref scan results in `self._cached_ocg_info`, reused by `remove()` to avoid duplicate full-table scans.
 - iPad screen resolutions are defined in `config.py` `WATERMARK_PATTERNS`. Add both portrait and landscape orientations.
-- Text pattern detection parameters (`MIN_PATTERN_LENGTH`, `PATTERN_SEARCH_WINDOW`) affect sensitivity — test with real PDFs.
-- The async `_remove_watermark_from_page` modifies the doc object in-place — PyMuPDF is not thread-safe, so the async gather works only because it's cooperative (no true parallelism on the doc object).
+- Text pattern detection uses a compiled regex (`_TJ_PATTERN`) to scan content streams in a single pass per stream, delegating byte-level matching to the C regex engine.
+- `_remove_watermark_from_page` is synchronous — PyMuPDF is not thread-safe, so page processing uses a simple `for` loop (no async parallelism).
 
 ### When modifying the server
 - `_process_pdf_file` creates a dedicated event loop per request (`asyncio.new_event_loop()`).

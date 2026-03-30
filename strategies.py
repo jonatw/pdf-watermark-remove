@@ -11,7 +11,6 @@ Version: 2.0.0
 """
 
 import re
-import asyncio
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple, Dict, Any, Counter as CounterType, Callable
 from pathlib import Path
@@ -37,22 +36,22 @@ class WatermarkRemovalStrategy(ABC):
     
     @abstractmethod
     async def remove(
-        self, 
-        input_file: Path, 
+        self,
+        doc: fitz.Document,
         output_file: Path,
         progress_callback: Optional[Callable[[str, float], None]] = None
     ) -> bool:
         """
-        Remove watermark from PDF file.
-        
+        Remove watermark from an opened PDF document.
+
         Args:
-            input_file: Path to input PDF file
+            doc: Already-opened PyMuPDF document (caller manages open/close)
             output_file: Path to output PDF file
             progress_callback: Optional callback for progress updates
-            
+
         Returns:
             bool: True if watermark was successfully removed, False otherwise
-            
+
         Raises:
             PDFProcessingError: If there's an error processing the PDF
         """
@@ -96,7 +95,7 @@ class XRefImageRemovalStrategy(WatermarkRemovalStrategy):
             {"width": pattern.width, "height": pattern.height}
             for pattern in self.config.WATERMARK_PATTERNS
         ]
-        logger.debug(f"Initialized XRefImageRemovalStrategy with patterns: {self.patterns}")
+        logger.debug("Initialized XRefImageRemovalStrategy with %d patterns", len(self.patterns))
     
     def can_handle(self, doc: fitz.Document) -> bool:
         """
@@ -113,7 +112,7 @@ class XRefImageRemovalStrategy(WatermarkRemovalStrategy):
             pattern in producer 
             for pattern in self.config.XREF_PRODUCER_PATTERNS
         )
-        logger.debug(f"XRef strategy can handle: {can_handle} (producer: {producer})")
+        logger.debug("XRef strategy can handle: %s (producer: %s)", can_handle, producer)
         return can_handle
     
     def _find_watermark_xref(self, page: fitz.Page) -> Optional[int]:
@@ -128,94 +127,77 @@ class XRefImageRemovalStrategy(WatermarkRemovalStrategy):
         """
         try:
             image_list = page.get_image_info(xrefs=True)
-            logger.debug(f"Found {len(image_list)} images on page")
+            logger.debug("Found %d images on page", len(image_list))
             
             for image_info in image_list:
                 for pattern in self.patterns:
                     if (image_info["width"] == pattern["width"] and 
                         image_info["height"] == pattern["height"]):
                         logger.info(
-                            f"Found watermark image with dimensions "
-                            f"{pattern['width']}x{pattern['height']}, "
-                            f"XRef: {image_info['xref']}"
+                            "Found watermark image %dx%d, XRef: %d",
+                            pattern['width'], pattern['height'], image_info['xref']
                         )
                         return image_info["xref"]
             
             return None
             
         except Exception as e:
-            logger.error(f"Error finding watermark XRef: {str(e)}")
+            logger.error("Error finding watermark XRef: %s", e)
             raise StrategyError(f"Failed to find watermark XRef: {str(e)}")
     
     async def remove(
-        self, 
-        input_file: Path, 
+        self,
+        doc: fitz.Document,
         output_file: Path,
         progress_callback: Optional[Callable[[str, float], None]] = None
     ) -> bool:
         """
         Remove watermark using XRef image removal strategy.
-        
+
         Args:
-            input_file: Path to input PDF file
+            doc: Already-opened PyMuPDF document (caller manages open/close)
             output_file: Path to output PDF file
             progress_callback: Optional callback for progress updates
-            
+
         Returns:
             bool: True if watermark was removed, False otherwise
-            
+
         Raises:
             PDFProcessingError: If there's an error processing the PDF
         """
         try:
-            # Report progress
-            if progress_callback:
-                progress_callback("Opening PDF", 0.1)
-                
-            doc = fitz.open(str(input_file))
-            logger.info(f"Opened PDF with {len(doc)} pages")
-            
-            # Check first page for watermark
-            if len(doc) == 0:
-                raise InvalidPDFError("PDF has no pages")
-            
-            # Report progress
             if progress_callback:
                 progress_callback("Finding watermark", 0.3)
-                
+
+            if len(doc) == 0:
+                raise InvalidPDFError("PDF has no pages")
+
             target_xref = self._find_watermark_xref(doc[0])
-            
+
             if not target_xref:
                 logger.warning("No watermark XRef found on first page")
                 return False
-            
-            # Report progress
+
             if progress_callback:
                 progress_callback("Removing watermark", 0.5)
-                
-            # Remove watermark image
+
             doc[0].delete_image(target_xref)
-            logger.info(f"Deleted watermark image with XRef: {target_xref}")
-            
-            # Report progress
+            logger.info("Deleted watermark image with XRef: %d", target_xref)
+
             if progress_callback:
                 progress_callback("Saving document", 0.8)
-                
-            # Save the modified document (no garbage collection needed — only one image deleted)
+
             doc.save(str(output_file))
-            logger.info(f"Saved processed PDF to: {output_file}")
-            
-            # Report progress
+            logger.info("Saved processed PDF to: %s", output_file)
+
             if progress_callback:
                 progress_callback("Complete", 1.0)
-                
-            doc.close()
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error in XRef removal strategy: {str(e)}")
-            raise PDFProcessingError(f"XRef removal failed: {str(e)}")
 
+            return True
+
+        except Exception as e:
+            logger.error("Error in XRef removal strategy: %s", e)
+            raise PDFProcessingError(f"XRef removal failed: {str(e)}")
 
 class OCGWatermarkRemovalStrategy(WatermarkRemovalStrategy):
     """
@@ -227,9 +209,13 @@ class OCGWatermarkRemovalStrategy(WatermarkRemovalStrategy):
     Typical for website-downloaded PDFs generated by PDFsharp.
     """
 
+    def __init__(self):
+        self._cached_ocg_info = None
+
     def can_handle(self, doc: fitz.Document) -> bool:
         """
         Check if document has an OCG layer named 'Watermark'.
+        Also caches the full xref scan result for use in remove().
 
         Args:
             doc: PyMuPDF document object
@@ -237,22 +223,8 @@ class OCGWatermarkRemovalStrategy(WatermarkRemovalStrategy):
         Returns:
             bool: True if an OCG Watermark layer is found
         """
-        for i in range(1, doc.xref_length()):
-            obj = doc.xref_object(i)
-            if "/Type /OCG" in obj and "Watermark" in obj:
-                logger.debug(f"Found OCG Watermark layer at xref {i}")
-                return True
-        return False
-
-    def _find_ocg_xrefs(self, doc: fitz.Document) -> dict:
-        """
-        Find all xrefs related to the OCG Watermark structure.
-
-        Returns:
-            dict with keys: ocg, ocmd, form_xobjects
-        """
+        # Single scan: detect and cache all OCG-related xrefs
         result = {"ocg": None, "ocmd": None, "form_xobjects": []}
-
         for i in range(1, doc.xref_length()):
             obj = doc.xref_object(i)
             if "/Type /OCG" in obj and "Watermark" in obj:
@@ -262,11 +234,12 @@ class OCGWatermarkRemovalStrategy(WatermarkRemovalStrategy):
             if "/Private /Watermark" in obj:
                 result["form_xobjects"].append(i)
 
-        logger.info(
-            f"OCG structure: OCG={result['ocg']}, OCMD={result['ocmd']}, "
-            f"Form XObjects={result['form_xobjects']}"
-        )
-        return result
+        self._cached_ocg_info = result
+
+        if result["ocg"] is not None:
+            logger.debug("Found OCG Watermark layer at xref %d", result["ocg"])
+            return True
+        return False
 
     def _is_watermark_content_stream(self, doc: fitz.Document, xref: int) -> bool:
         """
@@ -277,7 +250,6 @@ class OCGWatermarkRemovalStrategy(WatermarkRemovalStrategy):
         """
         try:
             stream = doc.xref_stream(xref).decode("latin1")
-            # Watermark streams have rotated text but no structured content markers
             has_rotation = "0.819152" in stream or "0.5735764" in stream
             has_marked_content = "BDC" in stream
             return has_rotation and not has_marked_content
@@ -286,7 +258,7 @@ class OCGWatermarkRemovalStrategy(WatermarkRemovalStrategy):
 
     async def remove(
         self,
-        input_file: Path,
+        doc: fitz.Document,
         output_file: Path,
         progress_callback: Optional[Callable[[str, float], None]] = None
     ) -> bool:
@@ -294,23 +266,27 @@ class OCGWatermarkRemovalStrategy(WatermarkRemovalStrategy):
         Remove watermark by stripping the OCG Watermark layer and all associated objects.
         """
         try:
-            if progress_callback:
-                progress_callback("Opening PDF", 0.05)
-
-            doc = fitz.open(str(input_file))
-            logger.info(f"Opened PDF with {len(doc)} pages")
-
             if len(doc) == 0:
                 raise InvalidPDFError("PDF has no pages")
 
             if progress_callback:
                 progress_callback("Finding OCG Watermark layer", 0.1)
 
-            ocg_info = self._find_ocg_xrefs(doc)
+            # Use cached result from can_handle() if available
+            ocg_info = self._cached_ocg_info
+            if ocg_info is None:
+                # Fallback: scan now (shouldn't happen in normal flow)
+                self.can_handle(doc)
+                ocg_info = self._cached_ocg_info
 
             if ocg_info["ocg"] is None:
                 logger.warning("No OCG Watermark layer found")
                 return False
+
+            logger.info(
+                "OCG structure: OCG=%s, OCMD=%s, Form XObjects=%s",
+                ocg_info['ocg'], ocg_info['ocmd'], ocg_info['form_xobjects']
+            )
 
             if progress_callback:
                 progress_callback("Removing watermark content streams", 0.3)
@@ -321,24 +297,20 @@ class OCGWatermarkRemovalStrategy(WatermarkRemovalStrategy):
             for pg_num in range(total_pages):
                 page = doc[pg_num]
                 content_xrefs = list(page.get_contents())
-                keep_xrefs = []
 
                 for xref in content_xrefs:
                     if self._is_watermark_content_stream(doc, xref):
-                        # Clear the stream content instead of trying to unlink
                         doc.update_stream(xref, b"")
                         removed_streams += 1
-                        logger.debug(f"Cleared watermark stream xref {xref} on page {pg_num}")
-                    else:
-                        keep_xrefs.append(xref)
+                        logger.debug("Cleared watermark stream xref %d on page %d", xref, pg_num)
 
                 if progress_callback:
                     progress_callback(
-                        f"Processing page {pg_num + 1}/{total_pages}",
+                        "Processing page %d/%d" % (pg_num + 1, total_pages),
                         0.3 + 0.3 * (pg_num + 1) / total_pages
                     )
 
-            logger.info(f"Cleared {removed_streams} watermark content streams")
+            logger.info("Cleared %d watermark content streams", removed_streams)
 
             if progress_callback:
                 progress_callback("Removing watermark Form XObjects", 0.65)
@@ -347,61 +319,52 @@ class OCGWatermarkRemovalStrategy(WatermarkRemovalStrategy):
             for xref in ocg_info["form_xobjects"]:
                 try:
                     doc.update_stream(xref, b"")
-                    # Remove /PieceInfo (contains /Private /Watermark tag)
                     doc.xref_set_key(xref, "PieceInfo", "null")
-                    # Remove /OC reference to the watermark OCMD
                     doc.xref_set_key(xref, "OC", "null")
-                    # Remove /LastModified timestamp
                     doc.xref_set_key(xref, "LastModified", "null")
-                    logger.debug(f"Cleared watermark Form XObject xref {xref}")
+                    logger.debug("Cleared watermark Form XObject xref %d", xref)
                 except Exception as e:
-                    logger.warning(f"Could not clear Form XObject xref {xref}: {e}")
+                    logger.warning("Could not clear Form XObject xref %d: %s", xref, e)
 
             if progress_callback:
                 progress_callback("Cleaning OCG structure", 0.75)
 
             # Step 3: Remove OCG structure
             try:
-                # Find catalog and remove /OCProperties
                 for i in range(1, doc.xref_length()):
                     obj = doc.xref_object(i)
                     if "/Type /Catalog" in obj and "/OCProperties" in obj:
                         doc.xref_set_key(i, "OCProperties", "null")
-                        logger.info(f"Removed /OCProperties from catalog xref {i}")
+                        logger.info("Removed /OCProperties from catalog xref %d", i)
                         break
 
-                # Clear the OCG group object
                 if ocg_info["ocg"]:
                     doc.xref_set_key(ocg_info["ocg"], "Type", "null")
                     doc.xref_set_key(ocg_info["ocg"], "Name", "null")
                     doc.xref_set_key(ocg_info["ocg"], "Usage", "null")
-                    logger.debug(f"Cleared OCG group xref {ocg_info['ocg']}")
+                    logger.debug("Cleared OCG group xref %s", ocg_info['ocg'])
 
-                # Clear the OCMD object
                 if ocg_info["ocmd"]:
                     doc.xref_set_key(ocg_info["ocmd"], "Type", "null")
                     doc.xref_set_key(ocg_info["ocmd"], "OCGs", "null")
-                    logger.debug(f"Cleared OCMD xref {ocg_info['ocmd']}")
+                    logger.debug("Cleared OCMD xref %s", ocg_info['ocmd'])
             except Exception as e:
-                logger.warning(f"Could not clean OCG structure: {e}")
+                logger.warning("Could not clean OCG structure: %s", e)
 
             if progress_callback:
                 progress_callback("Saving document", 0.85)
 
-            # Save — streams already cleared, no deep garbage collection needed
             doc.save(str(output_file))
-            logger.info(f"Saved processed PDF to: {output_file}")
+            logger.info("Saved processed PDF to: %s", output_file)
 
             if progress_callback:
                 progress_callback("Complete", 1.0)
 
-            doc.close()
             return True
 
         except Exception as e:
-            logger.error(f"Error in OCG watermark removal: {str(e)}")
+            logger.error("Error in OCG watermark removal: %s", e)
             raise PDFProcessingError(f"OCG watermark removal failed: {str(e)}")
-
 
 class CommonStringRemovalStrategy(WatermarkRemovalStrategy):
     """
@@ -427,8 +390,8 @@ class CommonStringRemovalStrategy(WatermarkRemovalStrategy):
         self.min_length = min_length or self.config.MIN_PATTERN_LENGTH
         self.window = window or self.config.PATTERN_SEARCH_WINDOW
         logger.debug(
-            f"Initialized CommonStringRemovalStrategy with min_length: "
-            f"{self.min_length}, window: {self.window}"
+            "Initialized CommonStringRemovalStrategy with min_length: %d, window: %d",
+            self.min_length, self.window
         )
     
     def can_handle(self, doc: fitz.Document) -> bool:
@@ -443,88 +406,67 @@ class CommonStringRemovalStrategy(WatermarkRemovalStrategy):
         """
         return True
     
+    # Compiled regex for TJ pattern extraction — delegates to C engine
+    _TJ_PATTERN = re.compile(
+        rb'\(([^)]*)\) Tj|<([^>]*)> Tj|\[([^\]]*)\] TJ'
+    )
+
     def _find_most_frequent_text_tj_substring(
-        self, 
+        self,
         doc: fitz.Document,
         progress_callback: Optional[Callable[[str, float], None]] = None
     ) -> Tuple[bytes, int]:
         """
         Find the most frequently occurring TJ substring in the document.
-        
+
+        Uses a compiled regex to scan content streams in a single pass per stream,
+        delegating byte-level matching to the C regex engine.
+
         Args:
             doc: PyMuPDF document object
             progress_callback: Optional callback for progress updates
-            
+
         Returns:
             Tuple[bytes, int]: Most frequent substring and its count
-            
+
         Raises:
             WatermarkNotFoundError: If no pattern is found
         """
         counter: CounterType[bytes] = Counter()
         total_pages = len(doc)
-        
+
         for page_idx, page in enumerate(doc):
-            # Report progress
             if progress_callback and total_pages > 0:
                 progress = page_idx / total_pages
-                progress_callback(f"Analyzing page {page_idx+1}/{total_pages}", progress)
-                
+                progress_callback("Analyzing page %d/%d" % (page_idx + 1, total_pages), progress)
+
             for xref in page.get_contents():
                 content = doc.xref_stream(xref)
-                i = 0
-                while i < len(content):
-                    # Check for '(' pattern
-                    if content[i:i+1] == b'(':
-                        end = content.find(b') Tj', i)
-                        if end != -1 and end - i < self.window:
-                            substring = content[i:end+4]
-                            if len(substring) >= self.min_length:
-                                counter[substring] += 1
-                            i = end + 4
-                            continue
-                    
-                    # Check for '<' pattern
-                    if content[i:i+1] == b'<':
-                        end = content.find(b'> Tj', i)
-                        if end != -1 and end - i < self.window:
-                            substring = content[i:end+4]
-                            if len(substring) >= self.min_length:
-                                counter[substring] += 1
-                            i = end + 4
-                            continue
-                    
-                    # Check for '[' pattern
-                    if content[i:i+1] == b'[':
-                        end = content.find(b'] TJ', i)
-                        if end != -1 and end - i < self.window:
-                            substring = content[i:end+5]
-                            if len(substring) >= self.min_length:
-                                counter[substring] += 1
-                            i = end + 5
-                            continue
-                    
-                    i += 1
-        
+                for match in self._TJ_PATTERN.finditer(content):
+                    substring = match.group()
+                    if self.min_length <= len(substring) <= self.window:
+                        counter[substring] += 1
+
         if not counter:
             logger.warning("No watermark pattern found in document")
             return None, 0
-        
+
         # Log top 5 candidates
         logger.info("Top 5 candidates (min length applied):")
         for s, c in counter.most_common(5):
             try:
-                logger.info(f"  {s.decode('utf-8', errors='replace')} x {c}")
-            except:
-                logger.info(f"  {s[:60]}... x {c}")
-        
+                logger.info("  %s x %d", s.decode('utf-8', errors='replace'), c)
+            except Exception:
+                logger.info("  %s... x %d", s[:60], c)
+
         # Find most frequent pattern
         most_frequent, frequency = counter.most_common(1)[0]
-        
+
         return most_frequent, frequency
+
     
-    async def _remove_watermark_from_page(
-        self, 
+    def _remove_watermark_from_page(
+        self,
         doc: fitz.Document,
         page_number: int,
         target_str: str,
@@ -533,137 +475,120 @@ class CommonStringRemovalStrategy(WatermarkRemovalStrategy):
     ) -> int:
         """
         Remove all occurrences of pattern from a single page.
-        
+
         Args:
             doc: PyMuPDF document object
             page_number: Page number to process
             target_str: String pattern to remove
             progress_callback: Optional callback for progress updates
             total_pages: Total number of pages (for progress calculation)
-            
+
         Returns:
             int: Number of replacements made
         """
         try:
-            # Report progress
             if progress_callback:
                 progress = page_number / total_pages
-                progress_callback(f"Processing page {page_number+1}/{total_pages}", progress)
-                
+                progress_callback("Processing page %d/%d" % (page_number + 1, total_pages), progress)
+
             page = doc[page_number]
             replaced = 0
-            
+
             for xref in page.get_contents():
                 raw = doc.xref_stream(xref)
                 raw_str = raw.decode("latin1")
-                
-                # Find and remove blocks containing the target string
-                blocks = re.findall(r"q\s+.*?Q", raw_str, flags=re.DOTALL)
-                for block in blocks:
-                    if target_str in block:
-                        raw_str = raw_str.replace(block, "")
+
+                # Single-pass removal of q...Q blocks containing the target string
+                def replacer(m):
+                    nonlocal replaced
+                    if target_str in m.group():
                         replaced += 1
-                
+                        return ''
+                    return m.group()
+
+                new_str = re.sub(r'q\s+.*?Q', replacer, raw_str, flags=re.DOTALL)
+
                 if replaced:
-                    # Update the page content
-                    doc.update_stream(xref, raw_str.encode("latin1"))
-            
+                    doc.update_stream(xref, new_str.encode("latin1"))
+
             return replaced
-            
+
         except Exception as e:
-            logger.error(f"Error removing pattern from page {page_number}: {str(e)}")
+            logger.error("Error removing pattern from page %d: %s", page_number, e)
             raise StrategyError(f"Failed to remove pattern from page {page_number}: {str(e)}")
-    
     async def remove(
-        self, 
-        input_file: Path, 
+        self,
+        doc: fitz.Document,
         output_file: Path,
         progress_callback: Optional[Callable[[str, float], None]] = None
     ) -> bool:
         """
         Remove watermark using common string removal strategy.
-        
+
         Args:
-            input_file: Path to input PDF file
+            doc: Already-opened PyMuPDF document (caller manages open/close)
             output_file: Path to output PDF file
             progress_callback: Optional callback for progress updates
-            
+
         Returns:
             bool: True if watermark was removed, False otherwise
-            
+
         Raises:
             PDFProcessingError: If there's an error processing the PDF
         """
         try:
-            # Report progress
-            if progress_callback:
-                progress_callback("Opening PDF", 0.05)
-                
-            doc = fitz.open(str(input_file))
-            logger.info(f"Opened PDF with {len(doc)} pages")
-            
-            if len(doc) == 0:
-                raise InvalidPDFError("PDF has no pages")
-            
-            # Report progress
             if progress_callback:
                 progress_callback("Analyzing document", 0.1)
-                
+
+            if len(doc) == 0:
+                raise InvalidPDFError("PDF has no pages")
+
             # Find most frequent pattern
             most_common, freq = self._find_most_frequent_text_tj_substring(
                 doc,
                 lambda s, p: progress_callback(s, 0.1 + p * 0.3) if progress_callback else None
             )
-            
+
             if not most_common or freq < 1:
                 logger.warning("No watermark pattern detected")
                 return False
-            
+
             # Convert pattern to string
             try:
                 target_str = most_common.decode('latin1').strip()
-            except:
+            except Exception:
                 target_str = most_common.hex()
-            
-            logger.info(f"Detected watermark (freq={freq}):")
+
+            logger.info("Detected watermark (freq=%d):", freq)
             logger.info(target_str)
-            
-            # Report progress
+
             if progress_callback:
                 progress_callback("Removing watermark", 0.4)
-                
-            # Prepare progress tracking for page processing
+
             total_pages = len(doc)
-            
-            # Remove pattern from all pages concurrently
-            tasks = [
+
+            # Remove pattern from all pages sequentially
+            # (PyMuPDF doc is not thread-safe; async gather had no real parallelism)
+            for page in doc:
                 self._remove_watermark_from_page(
-                    doc, 
-                    page.number, 
+                    doc,
+                    page.number,
                     target_str,
                     lambda s, p: progress_callback(s, 0.4 + p * 0.5) if progress_callback else None,
                     total_pages
-                ) 
-                for page in doc
-            ]
-            
-            await asyncio.gather(*tasks)
-            
-            # Report progress
+                )
+
             if progress_callback:
                 progress_callback("Saving document", 0.9)
-                
-            # Save the modified document (streams modified in-place, no garbage collection needed)
+
             doc.save(str(output_file))
-            logger.info(f"Saved processed PDF to: {output_file}")
-            
-            # Report progress
+            logger.info("Saved processed PDF to: %s", output_file)
+
             if progress_callback:
                 progress_callback("Complete", 1.0)
-                
-            doc.close()
+
             return True
-            
+
         except Exception as e:
-            logger.error(f"Error in common string removal strategy: {str(e)}")
+            logger.error("Error in common string removal strategy: %s", e)
             raise PDFProcessingError(f"Common string removal failed: {str(e)}")

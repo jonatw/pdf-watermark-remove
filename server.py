@@ -188,9 +188,6 @@ class PDFWatermarkRemoverServer:
 
     def _process_pdf_file(self, file, filename):
         import tempfile
-        import shutil
-        import asyncio
-        from remove_watermark import remove_watermark
 
         job_id = str(uuid.uuid4())
         output_path = os.path.join(self.data_dir, f"processed_{secure_filename(filename)}")
@@ -202,11 +199,13 @@ class PDFWatermarkRemoverServer:
         progress = 1.0
         error = None
         try:
-            # Use the same async logic as CLI (shared remove_watermark)
-            if self.config_file:
-                asyncio.run(remove_watermark(temp_input_path, output_path, config_file=self.config_file))
-            else:
-                asyncio.run(remove_watermark(temp_input_path, output_path))
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(
+                    remove_watermark(temp_input_path, output_path, config_file=self.config_file)
+                )
+            finally:
+                loop.close()
         except Exception as e:
             status = 'failed'
             progress = 1.0

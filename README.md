@@ -94,7 +94,7 @@ Both CLI and server accept a YAML config file for advanced options. The server w
 | File/Class             | Purpose                                            |
 |-----------------------|----------------------------------------------------|
 | `remove_watermark.py` | Core watermark removal logic (shared by CLI/server)|
-| `strategies.py`       | Watermark removal strategies (image/text)          |
+| `strategies.py`       | Watermark removal strategies                       |
 | `config.py`           | Configuration management (YAML/env support)        |
 | `exceptions.py`       | Custom exceptions                                  |
 | `cli.py`              | Command-line interface                             |

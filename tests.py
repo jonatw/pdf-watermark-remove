@@ -35,6 +35,7 @@ from exceptions import (
 from strategies import (
     WatermarkRemovalStrategy,
     XRefImageRemovalStrategy,
+    OCGWatermarkRemovalStrategy,
     CommonStringRemovalStrategy
 )
 from remove_watermark import WatermarkRemover, remove_watermark, ProgressCallback
@@ -245,6 +246,61 @@ class TestStrategies(unittest.TestCase):
         # Check parameters
         self.assertEqual(strategy.min_length, 50)
         self.assertEqual(strategy.window, 400)
+
+
+class TestOCGWatermarkStrategy(unittest.TestCase):
+    """Test cases for OCG Watermark removal strategy."""
+
+    def test_can_handle_with_ocg_watermark(self):
+        """Test that strategy detects OCG Watermark layer."""
+        rjbb = "data/RJBB.pdf"
+        if not os.path.exists(rjbb):
+            self.skipTest("data/RJBB.pdf not available")
+        strategy = OCGWatermarkRemovalStrategy()
+        doc = fitz.open(rjbb)
+        self.assertTrue(strategy.can_handle(doc))
+        doc.close()
+
+    def test_can_handle_without_ocg_watermark(self):
+        """Test that strategy rejects PDFs without OCG Watermark layer."""
+        # Create a plain PDF with no OCG
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            doc = fitz.Document()
+            page = doc.new_page()
+            page.insert_text((72, 72), "Hello", fontsize=12)
+            doc.save(tmp.name)
+            doc.close()
+
+            doc = fitz.open(tmp.name)
+            strategy = OCGWatermarkRemovalStrategy()
+            self.assertFalse(strategy.can_handle(doc))
+            doc.close()
+            os.unlink(tmp.name)
+
+    def test_ocg_removal_on_rjbb(self):
+        """Test OCG watermark removal produces clean output."""
+        rjbb = "data/RJBB.pdf"
+        if not os.path.exists(rjbb):
+            self.skipTest("data/RJBB.pdf not available")
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            output = tmp.name
+
+        try:
+            remover = WatermarkRemover()
+            result = asyncio.run(remover.remove_watermark(rjbb, output))
+            self.assertTrue(result)
+
+            # Verify output has no remaining watermark structures
+            doc = fitz.open(output)
+            for i in range(1, doc.xref_length()):
+                obj = doc.xref_object(i)
+                self.assertNotIn("/Private /Watermark", obj,
+                    f"Watermark Form XObject remnant at xref {i}")
+            doc.close()
+        finally:
+            if os.path.exists(output):
+                os.unlink(output)
 
 
 class TestRasterizedDetection(unittest.TestCase):

@@ -164,6 +164,11 @@ class Config:
             cls._instance = super(Config, cls).__new__(cls)
             cls._instance._init(config_file)
         return cls._instance
+
+    @classmethod
+    def reset(cls):
+        """Reset the singleton instance, allowing re-initialization."""
+        cls._instance = None
     
     def _init(self, config_file: Optional[str] = None):
         """

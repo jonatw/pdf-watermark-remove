@@ -56,21 +56,22 @@ class TestConfig(unittest.TestCase):
     
     def test_environment_variables(self):
         """Test configuration from environment variables."""
+        # Reset singleton so env vars are picked up
+        Config.reset()
+
         # Set environment variables
         os.environ["PDF_WATERMARK_LOG_LEVEL"] = "DEBUG"
         os.environ["PDF_WATERMARK_MAX_CONCURRENT_PAGES"] = "4"
-        
-        # Create new config instance
-        config = Config()
-        
-        # Check values
-        self.assertEqual(config.LOG_LEVEL, "DEBUG")
-        self.assertEqual(config.MAX_CONCURRENT_PAGES, 4)
-        
-        # Clean up
-        del os.environ["PDF_WATERMARK_LOG_LEVEL"]
-        del os.environ["PDF_WATERMARK_MAX_CONCURRENT_PAGES"]
-    
+
+        try:
+            config = Config()
+            self.assertEqual(config.LOG_LEVEL, "DEBUG")
+            self.assertEqual(config.MAX_CONCURRENT_PAGES, 4)
+        finally:
+            del os.environ["PDF_WATERMARK_LOG_LEVEL"]
+            del os.environ["PDF_WATERMARK_MAX_CONCURRENT_PAGES"]
+            Config.reset()
+
     def test_yaml_config(self):
         """Test configuration from YAML file."""
         # Skip test if PyYAML is not available

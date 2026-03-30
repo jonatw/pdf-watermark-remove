@@ -273,19 +273,9 @@ class WatermarkRemover:
             # Update progress
             progress.update("Selecting strategy", 10)
 
-            # Select strategy: XRef > OCG > CommonString
-            if 'Version' in doc.metadata.get('producer', ''):
-                logger.info("Using XRef strategy based on producer metadata")
-                strategy = self.strategies[0]
-                strategy_name = "XRef"
-            elif self.strategies[1].can_handle(doc):
-                logger.info("Using OCG Watermark layer strategy")
-                strategy = self.strategies[1]
-                strategy_name = "OCG Watermark"
-            else:
-                logger.info("Using Common String strategy")
-                strategy = self.strategies[2]
-                strategy_name = "Common String"
+            # Select strategy via can_handle() chain: XRef > OCG > CommonString
+            strategy = self._select_strategy(doc)
+            strategy_name = strategy.__class__.__name__
 
             doc.close()
 

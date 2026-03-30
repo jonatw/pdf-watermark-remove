@@ -201,8 +201,8 @@ class XRefImageRemovalStrategy(WatermarkRemovalStrategy):
             if progress_callback:
                 progress_callback("Saving document", 0.8)
                 
-            # Save the modified document
-            doc.ez_save(str(output_file))
+            # Save the modified document (no garbage collection needed — only one image deleted)
+            doc.save(str(output_file))
             logger.info(f"Saved processed PDF to: {output_file}")
             
             # Report progress
@@ -388,8 +388,8 @@ class OCGWatermarkRemovalStrategy(WatermarkRemovalStrategy):
             if progress_callback:
                 progress_callback("Saving document", 0.85)
 
-            # Save with garbage collection to remove orphaned objects
-            doc.save(str(output_file), garbage=4, deflate=True, clean=True)
+            # Save — streams already cleared, no deep garbage collection needed
+            doc.save(str(output_file))
             logger.info(f"Saved processed PDF to: {output_file}")
 
             if progress_callback:
@@ -653,8 +653,8 @@ class CommonStringRemovalStrategy(WatermarkRemovalStrategy):
             if progress_callback:
                 progress_callback("Saving document", 0.9)
                 
-            # Save the modified document
-            doc.save(str(output_file), garbage=4, deflate=True, clean=True)
+            # Save the modified document (streams modified in-place, no garbage collection needed)
+            doc.save(str(output_file))
             logger.info(f"Saved processed PDF to: {output_file}")
             
             # Report progress

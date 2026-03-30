@@ -113,6 +113,35 @@ class WatermarkRemover:
             f"Initialized WatermarkRemover with {len(self.strategies)} strategies"
         )
     
+    def _is_rasterized_only(self, doc: fitz.Document) -> bool:
+        """
+        Check if PDF is a rasterized-only document (e.g. browser print-to-PDF).
+
+        A rasterized-only PDF has every page as a single image with no text
+        operators in the content stream. Watermarks in such PDFs are baked
+        into image pixels and cannot be removed by PDF stream manipulation.
+
+        Args:
+            doc: PyMuPDF document object
+
+        Returns:
+            bool: True if all pages are rasterized-only images
+        """
+        if len(doc) == 0:
+            return False
+
+        for page in doc:
+            images = page.get_images(full=True)
+            if len(images) != 1:
+                return False
+            if page.get_text("text").strip():
+                return False
+            for xref in page.get_contents():
+                stream = doc.xref_stream(xref).decode("latin1")
+                if "BT" in stream or "Tj" in stream or "TJ" in stream:
+                    return False
+        return True
+
     def _select_strategy(self, doc: fitz.Document) -> WatermarkRemovalStrategy:
         """
         Select appropriate strategy based on document characteristics.
@@ -176,7 +205,20 @@ class WatermarkRemover:
             
             # Log document metadata
             logger.info(f"Document metadata: {doc.metadata}")
-            
+
+            # Check if PDF is rasterized-only (e.g. browser print-to-PDF)
+            if self._is_rasterized_only(doc):
+                doc.close()
+                logger.warning(
+                    "PDF appears to be a rasterized image (e.g. browser print-to-PDF). "
+                    "Watermarks embedded in image pixels cannot be removed. "
+                    "Please use one of these methods to obtain a processable PDF:\n"
+                    "  - Download from iPad app (image-based watermark, removable)\n"
+                    "  - Download from website (text-based watermark, removable)\n"
+                    "  - Do NOT use browser print/save-as-PDF"
+                )
+                return False
+
             # Update progress
             progress.update("Selecting strategy", 10)
             

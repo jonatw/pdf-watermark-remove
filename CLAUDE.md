@@ -1,0 +1,183 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+**PDF Watermark Remover** is a Python tool for detecting and removing watermarks from PDF files. It provides two interfaces: a **CLI** for local/batch processing and a **Flask web server** for remote usage via browser or REST API.
+
+- **GitHub:** [jonatw/pdf-watermark-remove](https://github.com/jonatw/pdf-watermark-remove)
+
+**Tech Stack:**
+- **Core:** Python 3, PyMuPDF (fitz) for PDF manipulation
+- **Web:** Flask + Werkzeug
+- **Config:** PyYAML, environment variables
+- **CLI:** argparse, tqdm (progress bars)
+- **Testing:** unittest
+- **Deployment:** Docker / docker-compose
+
+## Essential Development Commands
+
+### Setup
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### CLI Usage
+```bash
+# Single file
+python cli.py <input.pdf>
+
+# With output path
+python cli.py <input.pdf> -o <output.pdf>
+
+# Batch mode (all PDFs in directory)
+python cli.py --batch <directory>
+
+# Batch with parallel processing
+python cli.py --batch <directory> --parallel 4
+
+# Recursive + overwrite
+python cli.py --batch <directory> -r --overwrite
+
+# Verbose output
+python cli.py <input.pdf> -v
+```
+
+### Web Server
+```bash
+# Direct
+python server.py
+
+# Docker
+docker-compose up
+```
+Server runs at `http://localhost:5566`.
+
+### Testing
+```bash
+python -m unittest tests.py          # Full test suite
+python -m unittest tests.py -v       # Verbose output
+```
+
+## Architecture Overview
+
+### Strategy Pattern
+```
+Input PDF
+  ↓ WatermarkRemover (remove_watermark.py)
+  ↓ Check producer metadata for "Version"
+  ├─ Yes → XRefImageRemovalStrategy
+  │         Matches image dimensions against iPad screen resolutions
+  │         Removes watermark image by XRef ID
+  └─ No  → CommonStringRemovalStrategy
+            Scans content streams for repeating text patterns (TJ/Tj operators)
+            Finds most frequent pattern across pages
+            Removes q...Q blocks containing the pattern
+  ↓
+Clean PDF output
+```
+
+### Key Files
+| File | Purpose |
+|------|---------|
+| `remove_watermark.py` | Core orchestration: `WatermarkRemover` class, strategy selection |
+| `strategies.py` | Strategy pattern: `XRefImageRemovalStrategy`, `CommonStringRemovalStrategy` |
+| `config.py` | Singleton `Config` class (defaults → YAML → env vars), watermark patterns |
+| `exceptions.py` | Custom exception hierarchy (`PDFProcessingError`, `InvalidPDFError`, etc.) |
+| `logging_utils.py` | Centralized logging with rotation support |
+| `cli.py` | CLI entry point: single file, batch, parallel processing |
+| `server.py` | Flask web server: upload, job tracking, download |
+| `tests.py` | Unit tests (Config, exceptions, strategies, WatermarkRemover) |
+| `templates/` | Flask HTML templates (index, job_status, error) |
+| `Dockerfile` | Container build config |
+| `docker-compose.yml` | Docker Compose with port 5566, volume mount to `/data` |
+
+### Watermark Detection
+
+**XRef Strategy** (`XRefImageRemovalStrategy`):
+- Triggered when PDF producer metadata contains "Version"
+- Scans first page for images matching iPad screen resolution dimensions
+- All modern iPad models supported (Pro 13"/11", Air, mini, standard)
+- Removes watermark by deleting the image XRef entry
+
+**Rasterized PDF Detection** (pre-strategy check):
+- Detects browser print-to-PDF (e.g. Chrome `Skia/PDF`) where every page is a single raster image with no text operators
+- These PDFs have watermarks baked into image pixels — not removable
+- Returns `False` with a warning guiding user to download from iPad app or website instead
+
+**Text Strategy** (`CommonStringRemovalStrategy`):
+- Fallback strategy for all other PDFs
+- Scans content streams for `(...)Tj`, `<...>Tj`, and `[...]TJ` operators
+- Finds the most frequently occurring pattern (min 30 chars, max 300 char window)
+- Removes all `q...Q` graphic state blocks containing the pattern
+- Async per-page processing
+
+### Configuration Hierarchy
+1. `Config.DEFAULT_CONFIG` (hardcoded defaults)
+2. YAML config file (optional, via `--config` flag)
+3. Environment variables (`PDF_WATERMARK_*` prefix)
+
+Key env vars: `PDF_WATERMARK_LOG_LEVEL`, `PDF_WATERMARK_MAX_CONCURRENT_PAGES`, `PDF_WATERMARK_TEMP_DIR`, `PDF_WATERMARK_SERVER_HOST`, `PDF_WATERMARK_SERVER_PORT`
+
+### Web Server
+- Routes: `/` (upload UI), `/upload` (POST), `/job/<id>` (status), `/download/<id>`, `/health`
+- In-memory job tracking with UUID-based job IDs
+- Daemon cleanup thread for temp files
+- Temp files stored in `data/` directory
+
+### Exception Hierarchy
+```
+PDFWatermarkRemoverError
+├── PDFProcessingError
+│   ├── InvalidPDFError
+│   ├── WatermarkNotFoundError
+│   └── StrategyError
+├── FileOperationError
+└── ConfigurationError
+```
+
+## Testing
+
+### Test Classes (`tests.py`)
+| Class | Coverage |
+|-------|----------|
+| `TestConfig` | Default values, env var overrides, YAML loading, singleton pattern |
+| `TestExceptions` | Exception hierarchy, default/custom messages |
+| `TestProgressCallback` | Callback invocations, step tracking, progress calculation |
+| `TestWatermarkRemover` | Invalid file handling, nonexistent file handling |
+| `TestStrategies` | XRef pattern configuration, CommonString parameter configuration |
+
+### Known Issues
+- `Config` singleton pattern can cause test isolation issues with env var tests
+
+## AI Development Workflow
+
+### Before making any change
+1. Run the test suite and confirm it passes:
+   ```bash
+   python -m unittest tests.py
+   ```
+2. Read this file to understand the area being changed.
+
+### When modifying watermark strategies
+- Strategy selection is in `remove_watermark.py` (`WatermarkRemover._select_strategy` and the `remove_watermark` method). The actual selection uses producer metadata check, not `_select_strategy`.
+- iPad screen resolutions are defined in `config.py` `WATERMARK_PATTERNS`. Add both portrait and landscape orientations.
+- Text pattern detection parameters (`MIN_PATTERN_LENGTH`, `PATTERN_SEARCH_WINDOW`) affect sensitivity — test with real PDFs.
+- The async `_remove_watermark_from_page` modifies the doc object in-place — PyMuPDF is not thread-safe, so the async gather works only because it's cooperative (no true parallelism on the doc object).
+
+### When modifying the server
+- `_process_pdf_file` calls `asyncio.run()` synchronously within Flask request handling — not ideal for concurrent load but works for single-user scenarios.
+- Job state is in-memory only — lost on restart.
+- Uploaded files go to temp files, processed files to `data/` directory.
+
+### After making changes
+1. Run tests again and confirm all pass.
+2. If any test fails, fix the production code first. Do not modify tests without user approval.
+
+### When uncertain
+- Excel/PDF test files are in `data/` — do not commit them.
+- `Config` uses singleton pattern — be aware of state persistence across test cases.
+- Do not commit `.env` files or secrets.

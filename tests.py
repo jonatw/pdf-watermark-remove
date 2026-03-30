@@ -18,6 +18,7 @@ import tempfile
 import unittest
 import asyncio
 from pathlib import Path
+import fitz
 
 # Add the parent directory to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -245,6 +246,67 @@ class TestStrategies(unittest.TestCase):
         self.assertEqual(strategy.min_length, 50)
         self.assertEqual(strategy.window, 400)
 
+
+class TestRasterizedDetection(unittest.TestCase):
+    """Test cases for rasterized-only PDF detection."""
+
+    def _create_rasterized_pdf(self, path):
+        """Create a minimal PDF with only a full-page image and no text."""
+        doc = fitz.Document()
+        page = doc.new_page(width=612, height=792)
+        # Insert a dummy image (1x1 white pixel PNG)
+        import struct, zlib
+        raw = b'\x00\xff\xff\xff'
+        compressed = zlib.compress(raw)
+        ihdr = struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)
+        def chunk(ctype, data):
+            c = ctype + data
+            return struct.pack('>I', len(data)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+        png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', compressed) + chunk(b'IEND', b'')
+        rect = fitz.Rect(0, 0, 612, 792)
+        page.insert_image(rect, stream=png)
+        doc.save(str(path))
+        doc.close()
+
+    def _create_text_pdf(self, path):
+        """Create a minimal PDF with text content."""
+        doc = fitz.Document()
+        page = doc.new_page(width=612, height=792)
+        page.insert_text((72, 72), "Hello World", fontsize=12)
+        doc.save(str(path))
+        doc.close()
+
+    def test_rasterized_pdf_detected(self):
+        """Test that a rasterized-only PDF is detected."""
+        remover = WatermarkRemover()
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            self._create_rasterized_pdf(tmp.name)
+            doc = fitz.open(tmp.name)
+            self.assertTrue(remover._is_rasterized_only(doc))
+            doc.close()
+            os.unlink(tmp.name)
+
+    def test_text_pdf_not_detected(self):
+        """Test that a PDF with text is not flagged as rasterized."""
+        remover = WatermarkRemover()
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            self._create_text_pdf(tmp.name)
+            doc = fitz.open(tmp.name)
+            self.assertFalse(remover._is_rasterized_only(doc))
+            doc.close()
+            os.unlink(tmp.name)
+
+    def test_rasterized_pdf_returns_false(self):
+        """Test that remove_watermark returns False for rasterized PDFs."""
+        remover = WatermarkRemover()
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            self._create_rasterized_pdf(tmp.name)
+            output = tmp.name + ".out.pdf"
+            result = asyncio.run(remover.remove_watermark(tmp.name, output))
+            self.assertFalse(result)
+            os.unlink(tmp.name)
+            if os.path.exists(output):
+                os.unlink(output)
 
 if __name__ == "__main__":
     unittest.main()

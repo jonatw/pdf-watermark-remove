@@ -126,3 +126,6 @@ data/
 
 # Visual Studio Code settings
 .vscode/
+
+# Claude Code (local settings are machine-specific)
+.claude/settings.local.json

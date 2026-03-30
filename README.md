@@ -100,9 +100,7 @@ Both CLI and server accept a YAML config file for advanced options. The server w
 | `cli.py`              | Command-line interface                             |
 | `server.py`           | Web service interface                              |
 | `logging_utils.py`    | Logging utilities                                  |
-| `test_pdf.py`         | PDF test utilities                                 |
 | `tests.py`            | Unit tests                                         |
-| `verify_refactoring.py`| Refactoring verification tools                     |
 
 ---
 

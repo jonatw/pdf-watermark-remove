@@ -443,6 +443,28 @@ class TestMetadataSanitization(unittest.TestCase):
             if os.path.exists(output):
                 os.unlink(output)
 
+    def test_pdf_id_stripped(self):
+        """Test that PDF /ID arrays are removed from output."""
+        rjbb = "data/RJBB.pdf"
+        if not os.path.exists(rjbb):
+            self.skipTest("data/RJBB.pdf not available")
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            output = tmp.name
+
+        try:
+            import re
+            remover = WatermarkRemover()
+            asyncio.run(remover.remove_watermark(rjbb, output))
+
+            with open(output, 'rb') as f:
+                data = f.read()
+            matches = re.findall(rb'/ID\s*\[<[0-9A-Fa-f]+><[0-9A-Fa-f]+>\]', data)
+            self.assertEqual(len(matches), 0, "PDF /ID array should be stripped")
+        finally:
+            if os.path.exists(output):
+                os.unlink(output)
+
 
 if __name__ == "__main__":
     unittest.main()

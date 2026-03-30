@@ -162,6 +162,21 @@ class WatermarkRemover:
         cleaned = cleaned.strip()
         return cleaned or "PDF Producer"
 
+    @staticmethod
+    def _strip_pdf_ids(file_path: Path):
+        """Remove all /ID arrays from PDF trailer bytes."""
+        try:
+            with open(str(file_path), 'rb') as f:
+                data = f.read()
+            pattern = rb'/ID\s*\[<[0-9A-Fa-f]+><[0-9A-Fa-f]+>\]'
+            new_data = re.sub(pattern, b'', data)
+            if new_data != data:
+                with open(str(file_path), 'wb') as f:
+                    f.write(new_data)
+                logger.debug("Stripped PDF /ID arrays")
+        except Exception as e:
+            logger.warning(f"Could not strip PDF /ID: {e}")
+
     def _sanitize_metadata(self, file_path: Path):
         """
         Generalize metadata in a processed PDF to prevent tracking.
@@ -189,7 +204,10 @@ class WatermarkRemover:
             doc.saveIncr()
             doc.close()
 
-            logger.info("Metadata sanitized: dates truncated, XMP cleared, producer generalized")
+            # Strip PDF /ID array from trailer (PyMuPDF always writes it on save)
+            self._strip_pdf_ids(file_path)
+
+            logger.info("Metadata sanitized: dates truncated, XMP cleared, producer generalized, /ID stripped")
         except Exception as e:
             logger.warning(f"Could not sanitize metadata: {e}")
 

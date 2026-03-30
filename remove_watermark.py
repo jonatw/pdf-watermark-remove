@@ -9,6 +9,7 @@ Author: PDF Watermark Remover Team
 Version: 2.0.0
 """
 
+import re
 import logging
 from typing import Optional, Callable, Dict, Any
 from pathlib import Path
@@ -141,6 +142,57 @@ class WatermarkRemover:
                     return False
         return True
 
+    @staticmethod
+    def _generalize_date(date_str: str) -> str:
+        """Truncate a PDF date to year-month, zeroing day/time/timezone."""
+        if date_str and date_str.startswith("D:") and len(date_str) >= 8:
+            year_month = date_str[2:8]
+            return f"D:{year_month}01000000+00'00'"
+        return ""
+
+    @staticmethod
+    def _generalize_producer(producer: str) -> str:
+        """Strip version numbers, build info, and URLs from producer string."""
+        if not producer:
+            return ""
+        cleaned = re.sub(r'\s*\(.*?\)', '', producer)
+        cleaned = re.sub(r'iOS Version\s+[\d.]+\s*', '', cleaned)
+        cleaned = re.sub(r'\s+[mv]?[\d][\d.\-]+\S*', '', cleaned)
+        cleaned = re.sub(r'\s*Original:.*', '', cleaned, flags=re.IGNORECASE)
+        cleaned = cleaned.strip()
+        return cleaned or "PDF Producer"
+
+    def _sanitize_metadata(self, file_path: Path):
+        """
+        Generalize metadata in a processed PDF to prevent tracking.
+
+        Truncates dates to year-month, strips producer version info,
+        clears author/creator, and removes XMP metadata entirely.
+        """
+        try:
+            doc = fitz.open(str(file_path))
+            meta = doc.metadata
+
+            new_meta = {
+                "title": meta.get("title", ""),
+                "author": "",
+                "subject": meta.get("subject", ""),
+                "keywords": meta.get("keywords", ""),
+                "creator": "",
+                "producer": self._generalize_producer(meta.get("producer", "")),
+                "creationDate": self._generalize_date(meta.get("creationDate", "")),
+                "modDate": self._generalize_date(meta.get("modDate", "")),
+            }
+
+            doc.set_metadata(new_meta)
+            doc.set_xml_metadata("")
+            doc.saveIncr()
+            doc.close()
+
+            logger.info("Metadata sanitized: dates truncated, XMP cleared, producer generalized")
+        except Exception as e:
+            logger.warning(f"Could not sanitize metadata: {e}")
+
     def _select_strategy(self, doc: fitz.Document) -> WatermarkRemovalStrategy:
         """
         Select appropriate strategy based on document characteristics.
@@ -238,14 +290,21 @@ class WatermarkRemover:
             doc.close()
 
             progress.update(f"Processing with {strategy_name} strategy", 15)
-            return await strategy.remove(
+            result = await strategy.remove(
                 input_path,
                 output_path,
                 lambda s, p: progress.update(
                     s,
-                    15 + int(p * 80)
+                    15 + int(p * 75)
                 )
             )
+
+            if result:
+                progress.update("Sanitizing metadata", 93)
+                self._sanitize_metadata(output_path)
+                progress.update("Complete", 95)
+
+            return result
 
         except Exception as e:
             logger.error(f"Error removing watermark: {str(e)}")

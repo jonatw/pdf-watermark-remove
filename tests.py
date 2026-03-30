@@ -364,5 +364,84 @@ class TestRasterizedDetection(unittest.TestCase):
             if os.path.exists(output):
                 os.unlink(output)
 
+class TestMetadataSanitization(unittest.TestCase):
+    """Test cases for metadata sanitization."""
+
+    def test_generalize_date(self):
+        """Test date truncation to year-month."""
+        self.assertEqual(
+            WatermarkRemover._generalize_date("D:20260330234506+08'00'"),
+            "D:20260301000000+00'00'"
+        )
+        self.assertEqual(
+            WatermarkRemover._generalize_date("D:20260326101009+08'00'"),
+            "D:20260301000000+00'00'"
+        )
+        self.assertEqual(WatermarkRemover._generalize_date(""), "")
+        self.assertEqual(WatermarkRemover._generalize_date("invalid"), "")
+
+    def test_generalize_producer(self):
+        """Test producer string generalization."""
+        self.assertEqual(
+            WatermarkRemover._generalize_producer(
+                "PDFsharp 1.50.4000-netstandard (https://example.com) (Original: Word)"
+            ),
+            "PDFsharp"
+        )
+        self.assertEqual(
+            WatermarkRemover._generalize_producer(
+                "iOS Version 26.3.1 (Build 23D771330a) Quartz PDFContext"
+            ),
+            "Quartz PDFContext"
+        )
+        self.assertEqual(
+            WatermarkRemover._generalize_producer("Skia/PDF m146"),
+            "Skia/PDF"
+        )
+        self.assertEqual(
+            WatermarkRemover._generalize_producer(""),
+            ""
+        )
+
+    def test_sanitize_on_real_pdf(self):
+        """Test full sanitization on RJBB.pdf output."""
+        rjbb = "data/RJBB.pdf"
+        if not os.path.exists(rjbb):
+            self.skipTest("data/RJBB.pdf not available")
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            output = tmp.name
+
+        try:
+            remover = WatermarkRemover()
+            result = asyncio.run(remover.remove_watermark(rjbb, output))
+            self.assertTrue(result)
+
+            doc = fitz.open(output)
+            meta = doc.metadata
+
+            # Dates should be truncated to year-month
+            self.assertIn("01000000", meta.get("creationDate", ""))
+            self.assertIn("+00'00'", meta.get("creationDate", ""))
+
+            # Author and creator should be empty
+            self.assertEqual(meta.get("author", ""), "")
+            self.assertEqual(meta.get("creator", ""), "")
+
+            # Producer should be stripped of versions
+            producer = meta.get("producer", "")
+            self.assertNotIn("1.50", producer)
+            self.assertNotIn("github", producer.lower())
+
+            # XMP should be empty
+            xmp = doc.get_xml_metadata()
+            self.assertTrue(xmp == "" or xmp is None or len(xmp.strip()) == 0)
+
+            doc.close()
+        finally:
+            if os.path.exists(output):
+                os.unlink(output)
+
+
 if __name__ == "__main__":
     unittest.main()

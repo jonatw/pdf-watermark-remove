@@ -138,6 +138,13 @@ Key env vars: `PDF_WATERMARK_LOG_LEVEL`, `PDF_WATERMARK_MAX_CONCURRENT_PAGES`, `
 - Daemon cleanup thread for temp files
 - Temp files stored in `data/` directory
 
+### Metadata Sanitization (post-processing)
+After successful watermark removal, metadata is generalized to prevent tracking:
+- Dates truncated to year-month, timezone zeroed
+- Author and creator cleared
+- Producer stripped of version numbers, build info, URLs
+- XMP metadata cleared entirely (removes DocumentID, InstanceID)
+
 ### Exception Hierarchy
 ```
 PDFWatermarkRemoverError

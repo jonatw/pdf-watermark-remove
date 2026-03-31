@@ -13,7 +13,7 @@ Remove watermarks from PDF files, supporting both image-based and text-based wat
 | CLI & Web Service                        | Command-line and web UI for flexible usage               |
 | Batch & Recursive Processing             | Batch process directories, with optional recursion       |
 | Parallel Processing                      | Accelerate with multi-process parallelism                |
-| Config File Support (YAML)               | Flexible configuration via YAML file                     |
+| Environment Variable Config               | Flexible configuration via environment variables         |
 | Progress Reporting                       | Detailed progress output                                 |
 | Logging & Log Rotation                   | Console/file logging with rotation and filtering         |
 | Robust Error Handling                    | Custom exceptions for various error scenarios            |
@@ -53,7 +53,7 @@ This creates an output file named `document_no_watermark.pdf` in the same direct
 #### Advanced Options
 
 ```bash
-python cli.py document.pdf --out output.pdf --config config.yaml
+python cli.py document.pdf --out output.pdf
 ```
 
 ### Web Server
@@ -68,10 +68,6 @@ Visit [http://localhost:5566](http://localhost:5566) in your browser to upload P
 
 - **Job Status:** After upload, the web UI shows job progress and any errors encountered.
 - **Unified Logic:** The server now uses the exact same watermark removal logic as the CLI (via `remove_watermark` in `remove_watermark.py`). There is no code duplication; all PDF processing is consistent across both interfaces.
-
-#### Configuration
-
-Both CLI and server accept a YAML config file for advanced options. The server will use the config file if specified at startup.
 
 ---
 
@@ -95,7 +91,7 @@ Both CLI and server accept a YAML config file for advanced options. The server w
 |-----------------------|----------------------------------------------------|
 | `remove_watermark.py` | Core watermark removal logic (shared by CLI/server)|
 | `strategies.py`       | Watermark removal strategies                       |
-| `config.py`           | Configuration management (YAML/env support)        |
+| `config.py`           | Configuration management (env var support)          |
 | `exceptions.py`       | Custom exceptions                                  |
 | `cli.py`              | Command-line interface                             |
 | `server.py`           | Web service interface                              |

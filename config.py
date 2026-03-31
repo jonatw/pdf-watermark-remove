@@ -15,11 +15,6 @@ from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
-try:
-    import yaml
-    YAML_AVAILABLE = True
-except ImportError:
-    YAML_AVAILABLE = False
 
 
 # Configure logging
@@ -45,7 +40,7 @@ class Config:
     
     This class centralizes all configuration parameters used by the application,
     making it easy to modify settings in one place. It supports loading configuration
-    from YAML files and environment variables.
+    from environment variables.
     """
     
     # Default configuration values
@@ -150,19 +145,17 @@ class Config:
     # Configuration values
     _config = {}
     
-    def __new__(cls, config_file: Optional[str] = None):
+    def __new__(cls):
         """
         Create a new Config instance (singleton pattern).
         
-        Args:
-            config_file: Path to YAML configuration file (optional)
         
         Returns:
             Config: Config instance
         """
         if cls._instance is None:
             cls._instance = super(Config, cls).__new__(cls)
-            cls._instance._init(config_file)
+            cls._instance._init()
         return cls._instance
 
     @classmethod
@@ -170,19 +163,15 @@ class Config:
         """Reset the singleton instance, allowing re-initialization."""
         cls._instance = None
     
-    def _init(self, config_file: Optional[str] = None):
+    def _init(self):
         """
         Initialize the configuration.
         
         Args:
-            config_file: Path to YAML configuration file (optional)
         """
         # Load default configuration
         self._config = self.DEFAULT_CONFIG.copy()
         
-        # Load configuration from file
-        if config_file:
-            self._load_from_file(config_file)
         
         # Load configuration from environment variables
         self._load_from_env()
@@ -195,35 +184,6 @@ class Config:
         
         # Log configuration
         logger.debug(f"Configuration loaded: {self._config}")
-    
-    def _load_from_file(self, config_file: str):
-        """
-        Load configuration from a YAML file.
-        
-        Args:
-            config_file: Path to YAML configuration file
-        """
-        if not YAML_AVAILABLE:
-            logger.warning("YAML support is not available. Install PyYAML to load configuration from files.")
-            return
-        
-        try:
-            with open(config_file, 'r') as f:
-                file_config = yaml.safe_load(f)
-            
-            if file_config and isinstance(file_config, dict):
-                # Update configuration with values from file
-                for key, value in file_config.items():
-                    if key in self._config:
-                        self._config[key] = value
-                        logger.debug(f"Loaded configuration from file: {key}={value}")
-                    else:
-                        logger.warning(f"Unknown configuration key in file: {key}")
-            
-            logger.info(f"Loaded configuration from file: {config_file}")
-            
-        except Exception as e:
-            logger.error(f"Failed to load configuration from file: {str(e)}")
     
     def _load_from_env(self):
         """Load configuration from environment variables."""
@@ -280,41 +240,3 @@ class Config:
         if not os.path.exists(temp_dir):
             os.makedirs(temp_dir, exist_ok=True)
         return temp_dir
-    
-    @classmethod
-    def save_to_file(cls, filename: str):
-        """
-        Save the current configuration to a YAML file.
-        
-        Args:
-            filename: Path to the output file
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if not YAML_AVAILABLE:
-            logger.warning("YAML support is not available. Install PyYAML to save configuration to files.")
-            return False
-        
-        try:
-            # Convert WatermarkPattern objects to dictionaries
-            config = cls()._config.copy()
-            config["WATERMARK_PATTERNS"] = [
-                {"width": pattern.width, "height": pattern.height}
-                if isinstance(pattern, WatermarkPattern) else pattern
-                for pattern in config["WATERMARK_PATTERNS"]
-            ]
-            
-            # Remove binary data that can't be serialized to YAML
-            if "TEXT_PATTERN" in config and isinstance(config["TEXT_PATTERN"], bytes):
-                config["TEXT_PATTERN"] = config["TEXT_PATTERN"].decode("latin1")
-            
-            with open(filename, 'w') as f:
-                yaml.dump(config, f, default_flow_style=False)
-            
-            logger.info(f"Saved configuration to file: {filename}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to save configuration to file: {str(e)}")
-            return False

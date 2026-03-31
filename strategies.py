@@ -80,16 +80,14 @@ class XRefImageRemovalStrategy(WatermarkRemovalStrategy):
     effective for PDFs with image watermarks of known sizes.
     """
     
-    def __init__(self, patterns: List[Dict[str, int]] = None, config_file: Optional[str] = None):
+    def __init__(self, patterns: List[Dict[str, int]] = None):
         """
         Initialize the XRef removal strategy.
         
         Args:
             patterns: List of watermark dimension patterns to match
-            config_file: Path to configuration file (optional)
         """
-        # Load configuration
-        self.config = Config(config_file)
+        self.config = Config()
         
         self.patterns = patterns or [
             {"width": pattern.width, "height": pattern.height}
@@ -375,17 +373,15 @@ class CommonStringRemovalStrategy(WatermarkRemovalStrategy):
     for text-based watermarks that appear consistently across pages.
     """
     
-    def __init__(self, min_length: int = None, window: int = None, config_file: Optional[str] = None):
+    def __init__(self, min_length: int = None, window: int = None):
         """
         Initialize the common string removal strategy.
         
         Args:
             min_length: Minimum length for a pattern to be considered a watermark
             window: Maximum window size to search for patterns
-            config_file: Path to configuration file (optional)
         """
-        # Load configuration
-        self.config = Config(config_file)
+        self.config = Config()
         
         self.min_length = min_length or self.config.MIN_PATTERN_LENGTH
         self.window = window or self.config.PATTERN_SEARCH_WINDOW

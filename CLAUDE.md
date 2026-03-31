@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Tech Stack:**
 - **Core:** Python 3, PyMuPDF (fitz) for PDF manipulation
 - **Web:** Flask + Werkzeug
-- **Config:** PyYAML, environment variables
+- **Config:** environment variables
 - **CLI:** argparse, tqdm (progress bars)
 - **Testing:** unittest
 - **Deployment:** Docker / docker-compose
@@ -89,7 +89,7 @@ Clean PDF output
 |------|---------|
 | `remove_watermark.py` | Core orchestration: `WatermarkRemover` class, strategy selection |
 | `strategies.py` | Strategy pattern: `XRefImageRemovalStrategy`, `OCGWatermarkRemovalStrategy`, `CommonStringRemovalStrategy` |
-| `config.py` | Singleton `Config` class (defaults → YAML → env vars), watermark patterns |
+| `config.py` | Singleton `Config` class (defaults → env vars), watermark patterns |
 | `exceptions.py` | Custom exception hierarchy (`PDFProcessingError`, `InvalidPDFError`, etc.) |
 | `logging_utils.py` | Centralized logging with rotation support |
 | `cli.py` | CLI entry point: single file, batch, parallel processing |
@@ -127,8 +127,7 @@ Clean PDF output
 
 ### Configuration Hierarchy
 1. `Config.DEFAULT_CONFIG` (hardcoded defaults)
-2. YAML config file (optional, via `--config` flag)
-3. Environment variables (`PDF_WATERMARK_*` prefix)
+2. Environment variables (`PDF_WATERMARK_*` prefix)
 
 Key env vars: `PDF_WATERMARK_LOG_LEVEL`, `PDF_WATERMARK_MAX_CONCURRENT_PAGES`, `PDF_WATERMARK_TEMP_DIR`, `PDF_WATERMARK_SERVER_HOST`, `PDF_WATERMARK_SERVER_PORT`
 
@@ -161,7 +160,7 @@ PDFWatermarkRemoverError
 ### Test Classes (`tests.py`)
 | Class | Coverage |
 |-------|----------|
-| `TestConfig` | Default values, env var overrides, YAML loading, singleton pattern |
+| `TestConfig` | Default values, env var overrides, singleton pattern |
 | `TestExceptions` | Exception hierarchy, default/custom messages |
 | `TestProgressCallback` | Callback invocations, step tracking, progress calculation |
 | `TestWatermarkRemover` | Invalid file handling, nonexistent file handling |

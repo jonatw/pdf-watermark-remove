@@ -72,44 +72,6 @@ class TestConfig(unittest.TestCase):
             del os.environ["PDF_WATERMARK_MAX_CONCURRENT_PAGES"]
             Config.reset()
 
-    def test_yaml_config(self):
-        """Test configuration from YAML file."""
-        # Skip test if PyYAML is not available
-        try:
-            import yaml
-        except ImportError:
-            self.skipTest("PyYAML not available")
-
-        # Reset singleton so YAML file is picked up
-        Config.reset()
-
-        # Create temporary YAML file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as temp:
-            temp.write("""
-VERSION: "2.1.0"
-LOG_LEVEL: "DEBUG"
-MAX_CONCURRENT_PAGES: 16
-WATERMARK_PATTERNS:
-  - width: 1000
-    height: 500
-            """)
-            temp_path = temp.name
-
-        try:
-            # Create config from file
-            config = Config(temp_path)
-
-            # Check values
-            self.assertEqual(config.VERSION, "2.1.0")
-            self.assertEqual(config.LOG_LEVEL, "DEBUG")
-            self.assertEqual(config.MAX_CONCURRENT_PAGES, 16)
-            self.assertEqual(len(config.WATERMARK_PATTERNS), 1)
-            self.assertEqual(config.WATERMARK_PATTERNS[0].width, 1000)
-            self.assertEqual(config.WATERMARK_PATTERNS[0].height, 500)
-        finally:
-            os.unlink(temp_path)
-            Config.reset()
-    
     def test_singleton_pattern(self):
         """Test that Config follows the singleton pattern."""
         config1 = Config()

@@ -49,18 +49,15 @@ logger = get_logger(__name__)
 class PDFWatermarkRemoverServer:
     """Web server for PDF Watermark Remover."""
     
-    def __init__(self, app: Optional[Flask] = None, data_dir: Optional[str] = None, config_file: Optional[str] = None):
+    def __init__(self, app: Optional[Flask] = None, data_dir: Optional[str] = None):
         """
         Initialize the web server.
         
         Args:
             app: Flask application (optional)
             data_dir: Directory for storing temporary files (optional)
-            config_file: Path to configuration file (optional)
         """
-        self.config_file = config_file  # Track config file path
-        # Load configuration
-        self.config = Config(config_file)
+        self.config = Config()
         
         # Initialize Flask app
         self.app = app or Flask(__name__)
@@ -79,7 +76,7 @@ class PDFWatermarkRemoverServer:
         self.data_dir = Path(data_dir or self.config.TEMP_DIR)
         
         # Initialize remover
-        self.remover = WatermarkRemover(config_file)
+        self.remover = WatermarkRemover()
         
         # Initialize job tracking
         self.process_lock = threading.Lock()
@@ -202,7 +199,7 @@ class PDFWatermarkRemoverServer:
             loop = asyncio.new_event_loop()
             try:
                 loop.run_until_complete(
-                    remove_watermark(temp_input_path, output_path, config_file=self.config_file)
+                    remove_watermark(temp_input_path, output_path)
                 )
             finally:
                 loop.close()
@@ -232,12 +229,9 @@ class PDFWatermarkRemoverServer:
         # Dummy cleanup worker
         pass
 
-def create_app(config_file=None):
+def create_app():
     """
     Create and configure the Flask application.
-    
-    Args:
-        config_file: Path to configuration file
         
     Returns:
         Flask: Configured Flask application
@@ -249,19 +243,12 @@ def create_app(config_file=None):
     app = Flask(__name__)
     
     # Create server instance
-    server = PDFWatermarkRemoverServer(app, config_file=config_file)
+    server = PDFWatermarkRemoverServer(app)
     
     return app
 
 def main():
     """Entry point for the server application."""
-    # Get configuration file from command line arguments
-    import sys
-    config_file = None
-    for i, arg in enumerate(sys.argv):
-        if arg in ["--config", "-c"] and i + 1 < len(sys.argv):
-            config_file = sys.argv[i + 1]
-            break
     
     # Configure logging
     setup_logging()
@@ -270,7 +257,7 @@ def main():
     app = Flask(__name__)
     
     # Create server instance
-    server = PDFWatermarkRemoverServer(app, config_file=config_file)
+    server = PDFWatermarkRemoverServer(app)
     
     # Run the server
     server.run()

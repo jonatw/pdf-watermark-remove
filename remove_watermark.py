@@ -92,15 +92,9 @@ class WatermarkRemover:
     the appropriate removal strategy based on PDF characteristics.
     """
 
-    def __init__(self, config_file: Optional[str] = None):
-        """
-        Initialize the watermark remover.
-
-        Args:
-            config_file: Path to configuration file (optional)
-        """
-        # Load configuration
-        self.config = Config(config_file)
+    def __init__(self):
+        """Initialize the watermark remover."""
+        self.config = Config()
 
         # Initialize strategies (priority order: XRef > OCG > CommonString)
         self.strategies = [
@@ -319,24 +313,19 @@ async def remove_watermark(
     input_file: str,
     output_file: str,
     progress_callback: Optional[Callable[[str, float], None]] = None,
-    config_file: Optional[str] = None
 ) -> bool:
     """
     Remove watermark from PDF file.
-
-    This is a convenience function that maintains backward compatibility
-    with the original API.
 
     Args:
         input_file: Path to input PDF file
         output_file: Path to output PDF file
         progress_callback: Optional callback for progress updates
-        config_file: Path to configuration file (optional)
 
     Returns:
         bool: True if watermark was successfully removed
     """
-    remover = WatermarkRemover(config_file)
+    remover = WatermarkRemover()
     return await remover.remove_watermark(
         input_file,
         output_file,

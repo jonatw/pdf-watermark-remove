@@ -40,16 +40,14 @@ logger = get_logger(__name__)
 class PDFWatermarkRemoverCLI:
     """Command-line interface for PDF Watermark Remover."""
     
-    def __init__(self, config_file: Optional[str] = None):
+    def __init__(self):
         """
         Initialize the CLI.
         
         Args:
-            config_file: Path to configuration file (optional)
-        """
-        self.config_file = config_file
-        self.config = Config(config_file)
-        self.remover = WatermarkRemover(config_file)
+            """
+        self.config = Config()
+        self.remover = WatermarkRemover()
         self.args = None
         self.start_time = None
     
@@ -109,11 +107,6 @@ class PDFWatermarkRemoverCLI:
             help="Create backup of original files"
         )
         
-        # Configuration options
-        parser.add_argument(
-            "--config", "-c",
-            help="Path to configuration file"
-        )
         
         # Logging options
         parser.add_argument(
@@ -128,11 +121,6 @@ class PDFWatermarkRemoverCLI:
         
         args = parser.parse_args()
         
-        # If configuration file is specified, reload configuration
-        if args.config and args.config != self.config_file:
-            self.config_file = args.config
-            self.config = Config(self.config_file)
-            self.remover = WatermarkRemover(self.config_file)
         
         # Validate arguments
         self._validate_arguments(parser, args)
@@ -402,10 +390,7 @@ class PDFWatermarkRemoverCLI:
         
         # Create partial function for ProcessPoolExecutor
         from remove_watermark import remove_watermark
-        process_func = partial(
-            remove_watermark,
-            config_file=self.config_file
-        )
+        process_func = partial(remove_watermark)
         
         # Process files in parallel
         with ProcessPoolExecutor(max_workers=self.args.parallel) as executor:
@@ -543,19 +528,10 @@ class PDFWatermarkRemoverCLI:
 
 async def async_main():
     """Async entry point for the CLI application."""
-    # Get configuration file from command line arguments
     import sys
-    config_file = None
-    for i, arg in enumerate(sys.argv):
-        if arg in ["--config", "-c"] and i + 1 < len(sys.argv):
-            config_file = sys.argv[i + 1]
-            break
-    
-    # Create CLI instance with configuration
-    cli = PDFWatermarkRemoverCLI(config_file)
+    cli = PDFWatermarkRemoverCLI()
     exit_code = await cli.run()
     sys.exit(exit_code)
-
 
 def main():
     """Entry point for the CLI application."""

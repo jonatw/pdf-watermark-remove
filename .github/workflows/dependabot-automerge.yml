@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: dependabot/fetch-metadata@v2
+      - uses: dependabot/fetch-metadata@v3
         id: meta
       - name: Merge after CI passes (patch/minor)
         if: steps.meta.outputs.update-type != 'version-update:semver-major'

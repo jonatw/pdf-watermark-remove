@@ -404,7 +404,7 @@ class CommonStringRemovalStrategy(WatermarkRemovalStrategy):
     
     # Compiled regex for TJ pattern extraction — delegates to C engine
     _TJ_PATTERN = re.compile(
-        rb'\(([^)]*)\) Tj|<([^>]*)> Tj|\[([^\]]*)\] TJ'
+        rb'\(([^)]*)\)Tj|<([^>]*)>Tj|\[([^\]]*)\]TJ'
     )
 
     def _find_most_frequent_text_tj_substring(

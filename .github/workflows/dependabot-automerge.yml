@@ -1,0 +1,32 @@
+# Auto-merge dependabot PRs once CI is green (patch/minor only).
+# Major bumps are left open for human/agent review.
+name: dependabot-automerge
+on: pull_request
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  automerge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: dependabot/fetch-metadata@v2
+        id: meta
+      - name: Merge after CI passes (patch/minor)
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          CHECK: unittest
+        run: |
+          for i in $(seq 1 60); do
+            st=$(gh pr checks "$PR" -R "$GITHUB_REPOSITORY" --json name,state \
+                 -q ".[] | select(.name==\"$CHECK\") | .state" | head -1)
+            case "$st" in
+              SUCCESS) exec gh pr merge "$PR" -R "$GITHUB_REPOSITORY" --squash ;;
+              FAILURE|ERROR|CANCELLED) echo "check $st — not merging"; exit 1 ;;
+            esac
+            sleep 30
+          done
+          echo "timed out waiting for $CHECK"; exit 1

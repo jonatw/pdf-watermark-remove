@@ -1,10 +1,18 @@
+# Group minor+patch → 1 batched PR/week (auto-mergeable). Major bumps stay individual
+# so a breaking major doesn't block the safe batch (Gemini code-review 建議).
 version: 2
 updates:
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: weekly
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]

@@ -13,6 +13,7 @@ Version: 2.0.0
 """
 
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -212,6 +213,158 @@ class TestStrategies(unittest.TestCase):
         # Check parameters
         self.assertEqual(strategy.min_length, 50)
         self.assertEqual(strategy.window, 400)
+
+
+class TestCommonStringHexTJWatermark(unittest.TestCase):
+    """Tests for hex-encoded [<hex>]TJ watermarks (issue #12).
+
+    PyMuPDF's insert_text() emits [<hex>]TJ form (hex-encoded glyph codes)
+    rather than the plain (text)Tj form.  These tests verify that
+    CommonStringRemovalStrategy correctly detects and removes such marks.
+    """
+
+    _WATERMARK = "CONFIDENTIAL - DO NOT DISTRIBUTE"  # 32 chars → 64 hex digits → match len 70
+
+    def _make_hex_tj_pdf(self, path: str, watermark: str, n_pages: int = 5) -> None:
+        """Create a PDF whose watermark is written by insert_text() → [<hex>]TJ."""
+        doc = fitz.Document()
+        for i in range(n_pages):
+            page = doc.new_page(width=612, height=792)
+            page.insert_text((72, 100), f"Body text page {i + 1}")
+            page.insert_text((72, 400), watermark)
+        doc.save(path)
+        doc.close()
+
+    def test_hex_tj_regex_matches_insert_text_output(self):
+        """_TJ_PATTERN captures [<hex>]TJ emitted by insert_text()."""
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            path = f.name
+        try:
+            doc = fitz.Document()
+            page = doc.new_page()
+            page.insert_text((72, 400), self._WATERMARK)
+            xref = page.get_contents()[0]
+            content = doc.xref_stream(xref)
+            doc.close()
+
+            matches = list(CommonStringRemovalStrategy._TJ_PATTERN.finditer(content))
+            hex_tj_matches = [m for m in matches if m.group(3) is not None]  # group(3) = [...]TJ bracket content
+            self.assertGreater(len(hex_tj_matches), 0,
+                "No [<hex>]TJ match found — _TJ_PATTERN must cover the array-TJ form")
+
+            full_match = hex_tj_matches[0].group()
+            # Match must be long enough to pass default MIN_PATTERN_LENGTH (30)
+            self.assertGreaterEqual(len(full_match), 30,
+                f"Match length {len(full_match)} < MIN_PATTERN_LENGTH 30")
+
+            # The hex content decodes back to the watermark text (ASCII subset)
+            bracket_content = hex_tj_matches[0].group(3).strip()  # bytes inside [< >]
+            hex_str = bracket_content[1:-1].decode("ascii")  # strip < and >
+            decoded = bytes.fromhex(hex_str).decode("latin1")
+            self.assertEqual(decoded, self._WATERMARK,
+                f"Hex content decoded to {decoded!r}, expected {self._WATERMARK!r}")
+        finally:
+            os.unlink(path) if os.path.exists(path) else None
+
+    def test_hex_tj_detected_as_most_frequent(self):
+        """The hex-encoded watermark is the highest-frequency TJ pattern."""
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            path = f.name
+        try:
+            self._make_hex_tj_pdf(path, self._WATERMARK, n_pages=5)
+            doc = fitz.open(path)
+            strategy = CommonStringRemovalStrategy()
+            most_common, freq = strategy._find_most_frequent_text_tj_substring(doc)
+            doc.close()
+
+            self.assertIsNotNone(most_common, "Strategy should find a pattern")
+            self.assertEqual(freq, 5, f"Expected frequency 5, got {freq}")
+            # The most common pattern encodes the watermark — extract hex digits via regex
+            hex_content_re = re.compile(rb'\[<([^>]*)>')
+            m = hex_content_re.search(most_common)
+            self.assertIsNotNone(m, "Could not extract hex content from most_common match")
+            decoded = bytes.fromhex(m.group(1).decode("ascii")).decode("latin1")
+            self.assertEqual(decoded, self._WATERMARK,
+                f"Decoded text {decoded!r} != expected {self._WATERMARK!r}")
+        finally:
+            os.unlink(path) if os.path.exists(path) else None
+
+    def test_hex_tj_removal_end_to_end(self):
+        """End-to-end: insert_text() watermark is removed from all pages."""
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as fin:
+            input_path = fin.name
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as fout:
+            output_path = fout.name
+        try:
+            self._make_hex_tj_pdf(input_path, self._WATERMARK, n_pages=5)
+
+            doc = fitz.open(input_path)
+            pages_before = sum(1 for p in doc if self._WATERMARK in p.get_text())
+            doc.close()
+            self.assertEqual(pages_before, 5)
+
+            result = asyncio.run(WatermarkRemover().remove_watermark(input_path, output_path))
+            self.assertTrue(result, "remove_watermark should return True")
+
+            doc = fitz.open(output_path)
+            pages_after = sum(1 for p in doc if self._WATERMARK in p.get_text())
+            doc.close()
+            self.assertEqual(pages_after, 0,
+                f"Watermark still present on {pages_after} page(s) after removal")
+        finally:
+            for p in (input_path, output_path):
+                os.unlink(p) if os.path.exists(p) else None
+
+    def test_short_hex_watermark_below_min_length_not_detected(self):
+        """Short watermarks whose [<hex>]TJ form is < MIN_PATTERN_LENGTH are not detected.
+
+        "COPY" (4 chars) → [<434f5059>]TJ = 14 bytes < MIN_PATTERN_LENGTH (30).
+        This is a known limitation: raise min_length or use a different strategy
+        for short marks.
+        """
+        short_mark = "COPY"  # 4 chars → hex len 8 → full match len 14
+        expected_match = b"[<" + short_mark.encode("ascii").hex().encode("ascii") + b">]TJ"
+        self.assertLess(len(expected_match), 30,
+            "Precondition: 'COPY' encoded match must be < MIN_PATTERN_LENGTH (30)")
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            path = f.name
+        try:
+            # Use only the short mark — no body text — so no pattern clears min_length
+            doc = fitz.Document()
+            for _ in range(5):
+                page = doc.new_page(width=612, height=792)
+                page.insert_text((72, 400), short_mark)
+            doc.save(path)
+            doc.close()
+
+            doc = fitz.open(path)
+            strategy = CommonStringRemovalStrategy()
+            most_common, freq = strategy._find_most_frequent_text_tj_substring(doc)
+            doc.close()
+            # Strategy finds no match long enough to pass MIN_PATTERN_LENGTH
+            self.assertIsNone(most_common,
+                f"Short watermark unexpectedly detected as {most_common!r}")
+        finally:
+            os.unlink(path) if os.path.exists(path) else None
+
+    def test_real_fctm_watermark_removed(self):
+        """B787 FCTM R08 2.pdf: strategy detects and removes real-world watermark."""
+        pdf_path = os.path.expanduser("~/pdf-test-data/b787/B787 FCTM R08 2.pdf")
+        if not os.path.exists(pdf_path):
+            self.skipTest("Test asset not available (~/pdf-test-data/b787/B787 FCTM R08 2.pdf)")
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+            output_path = f.name
+        try:
+            result = asyncio.run(WatermarkRemover().remove_watermark(pdf_path, output_path))
+            self.assertTrue(result, "Strategy should detect and remove the FCTM watermark")
+            # Spot-check: output file must exist and be a valid PDF
+            doc = fitz.open(output_path)
+            self.assertGreater(len(doc), 0)
+            doc.close()
+        finally:
+            os.unlink(output_path) if os.path.exists(output_path) else None
 
 
 class TestOCGWatermarkStrategy(unittest.TestCase):

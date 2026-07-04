@@ -1,10 +1,17 @@
+# Group updates → 1-2 batched PRs/week instead of one-per-dep pile-up.
 version: 2
 updates:
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: weekly
+    groups:
+      pip:
+        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]

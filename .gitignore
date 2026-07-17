@@ -78,7 +78,6 @@ profile_default/
 ipython_config.py
 
 # pyenv
-.python-version
 
 # pipenv
 #Pipfile.lock
@@ -129,3 +128,4 @@ data/
 
 # Claude Code (local settings are machine-specific)
 .claude/settings.local.json
+# NOTE: .python-version IS tracked here — single source of truth for the CI Python pin

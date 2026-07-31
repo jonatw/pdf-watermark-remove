@@ -24,7 +24,7 @@ jobs:
             st=$(gh pr checks "$PR" -R "$GITHUB_REPOSITORY" --json name,state \
                  -q ".[] | select(.name==\"$CHECK\") | .state" | head -1)
             case "$st" in
-              SUCCESS) exec gh pr merge "$PR" -R "$GITHUB_REPOSITORY" --squash ;;
+              SUCCESS) exec gh pr merge "$PR" -R "$GITHUB_REPOSITORY" --squash --auto ;;
               FAILURE|ERROR|CANCELLED) echo "check $st — not merging"; exit 1 ;;
             esac
             sleep 30

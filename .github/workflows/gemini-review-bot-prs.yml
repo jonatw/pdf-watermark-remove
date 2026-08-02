@@ -1,0 +1,60 @@
+# Gemini Code Assist silently discards every GitHub event whose sender is a Bot.
+# Verified 2026-08-02 on openab-infra#340: the same `/gemini review` comment got
+# zero response from `jonatw-eagle[bot]` (18 min) and a full review 2 min after a
+# human posted it. Full evidence + fallout in openab-infra#342.
+#
+# Two consequences that this workflow exists to cancel out:
+#   1. PRs opened by the Fargate executors are bot-sender events, so they never
+#      get the automatic open-PR review — bot PRs default to ZERO Gemini coverage.
+#   2. A `/gemini review` posted by any fleet bot is dropped on the floor.
+#
+# Fix: re-issue the command from a User-owned PAT, so the sender is a human
+# account and the bot gate does not apply.
+#
+# Requires repo secret GEMINI_REVIEW_PAT (fine-grained PAT, Pull requests: R/W).
+# Absent secret = the job warns and exits 0, it does not fail the PR.
+
+name: gemini-review-bot-prs
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  # Manual path doubles as the re-review button: Gemini only reviews the version
+  # of the PR that was open when triggered, it does not re-review after a push.
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to (re-)request a Gemini review on"
+        required: true
+        type: string
+
+# The PAT does all the work; GITHUB_TOKEN needs nothing.
+permissions: {}
+
+concurrency:
+  group: gemini-review-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: false
+
+jobs:
+  request:
+    # Human-authored PRs already get the automatic review, so re-asking would
+    # only double up. Dependabot churn would burn review quota for little value.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.user.type == 'Bot' &&
+       github.event.pull_request.draft == false &&
+       github.event.pull_request.user.login != 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request Gemini review as a User
+        env:
+          GH_TOKEN: ${{ secrets.GEMINI_REVIEW_PAT }}
+          PR: ${{ github.event.pull_request.number || inputs.pr }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::warning title=Gemini review skipped::GEMINI_REVIEW_PAT is not set in this repo"
+            exit 0
+          fi
+          gh pr comment "${PR}" --repo "${REPO}" --body '/gemini review'
+          echo "Requested Gemini review on ${REPO}#${PR}"

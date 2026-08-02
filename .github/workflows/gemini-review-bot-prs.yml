@@ -1,18 +1,27 @@
 # Gemini Code Assist silently discards every GitHub event whose sender is a Bot.
-# Verified 2026-08-02 on openab-infra#340: the same `/gemini review` comment got
-# zero response from `jonatw-eagle[bot]` (18 min) and a full review 2 min after a
-# human posted it. Full evidence + fallout in openab-infra#342.
 #
-# Two consequences that this workflow exists to cancel out:
-#   1. PRs opened by the Fargate executors are bot-sender events, so they never
-#      get the automatic open-PR review — bot PRs default to ZERO Gemini coverage.
-#   2. A `/gemini review` posted by any fleet bot is dropped on the floor.
+# Verified by controlled experiment: on one and the same pull request, within the
+# same 20 minutes, a `/gemini review` comment posted by a bot account got no
+# response at all, while the identical text posted by a human got a full review
+# two minutes later. The gate is on the SENDER of the event, not the PR author.
+#
+# Two consequences this workflow exists to cancel out:
+#   1. PRs opened by automation are bot-sender events, so they never trigger the
+#      automatic open-PR review — such PRs default to ZERO Gemini coverage.
+#   2. A `/gemini review` posted by any bot is dropped on the floor, leaving only
+#      a comment that misleadingly looks like Gemini was invited.
 #
 # Fix: re-issue the command from a User-owned PAT, so the sender is a human
 # account and the bot gate does not apply.
 #
-# Requires repo secret GEMINI_REVIEW_PAT (fine-grained PAT, Pull requests: R/W).
+# Requires repo secret GEMINI_REVIEW_PAT (fine-grained PAT, Pull requests: R/W
+# and Issues: R/W — PR comments go through the issue-comments endpoint).
 # Absent secret = the job warns and exits 0, it does not fail the PR.
+#
+# Note: there is a SECOND, independent gate that refuses PRs touching only
+# `.github/workflows/*.yml` ("unable to generate a review ... due to the file
+# types"). That one states its reason instead of failing silently, and no PAT
+# can work around it.
 
 name: gemini-review-bot-prs
 

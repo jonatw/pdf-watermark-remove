@@ -21,21 +21,30 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         # Renamed from "Merge after CI passes": this step does not wait for anything.
         # `--auto` hands enforcement to GitHub, which gates on every required check plus
-        # the approval — so the poll that used to live here added no safety on top of
+        # the approval -- so the poll that used to live here added no safety on top of
         # that, while holding a hosted runner open for up to 30 minutes per PR to watch
         # something GitHub watches for free.
         #
-        # The poll was also actively harmful: it waited for the check to go green before
-        # calling `--auto`, i.e. it maximised the chance the PR was ALREADY mergeable by
-        # then, and `enablePullRequestAutoMerge` is reported to fail with "Pull request is
-        # in clean status" in exactly that case — the same red X that adding `--auto` set
-        # out to remove. Calling immediately, while checks are still pending, cannot hit
-        # that window.
+        # !! That equivalence holds ONLY where branch protection actually requires the
+        # check. Before copying this file to another repo, read its protection first:
+        #     gh api repos/OWNER/REPO/branches/main/protection --jq .required_status_checks
+        # A repo with `required_status_checks: null` and only a review requirement merges
+        # the instant someone approves -- red CI included. There the poll loop is the only
+        # gate and removing it is a regression, not a cleanup. That was literally the case
+        # in the sibling repo until its `unittest` context was made required on
+        # 2026-08-04; this comment exists so the next person checks instead of assuming.
         #
-        # Trade-off accepted: a FAILING check no longer produces a red run here. Auto-merge
-        # just never fires and the PR stays open.
-        # NOTE: unlike pdf-processor, this repo has NO close-stale-prs.yml, so nothing
-        # sweeps such a PR — it sits open until someone looks. Accepted here because a
-        # stuck dependabot PR is visible and harmless; revisit if they pile up.
+        # Calling immediately also avoids the `enablePullRequestAutoMerge`
+        # "Pull request is in clean status" failure -- but the load-bearing reason is not
+        # "checks are still pending", it is that a Dependabot PR here is BLOCKED on the
+        # required approving review from the moment it opens, so auto-merge always has
+        # something left to wait for.
+        #
+        # Trade-off accepted: a FAILING check no longer produces a red run *in this
+        # workflow*. The signal is not lost -- the CI workflow itself still goes red and
+        # still fires its event; only the messenger changes. Auto-merge never fires and
+        # the PR stays open.
+        # (No close-stale-prs.yml in this repo, so nothing GCs it either; it sits open
+        # until someone looks.)
         #
         run: gh pr merge "$PR" -R "$GITHUB_REPOSITORY" --squash --auto

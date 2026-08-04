@@ -26,13 +26,22 @@ jobs:
         # something GitHub watches for free.
         #
         # !! That equivalence holds ONLY where branch protection actually requires the
-        # check. Before copying this file to another repo, read its protection first:
-        #     gh api repos/OWNER/REPO/branches/main/protection --jq .required_status_checks
-        # A repo with `required_status_checks: null` and only a review requirement merges
-        # the instant someone approves -- red CI included. There the poll loop is the only
-        # gate and removing it is a regression, not a cleanup. That was literally the case
-        # in the sibling repo until its `unittest` context was made required on
-        # 2026-08-04; this comment exists so the next person checks instead of assuming.
+        # check, and THIS REPO did not require one until 2026-08-04. Until that day
+        # `main` here had `required_status_checks: null` and a review requirement only,
+        # meaning auto-merge would have landed a Dependabot PR the instant anyone
+        # approved -- red `unittest` included. The poll loop that used to sit here was
+        # the only thing holding a bump until CI was green.
+        #
+        # `unittest` was made a required status check specifically so that this poll
+        # could be removed. That check is now the ONLY gate between a red build and
+        # `main`. DO NOT REMOVE IT, and do not assume the arrangement is decorative
+        # because the poll is gone -- the two changes are one change.
+        #
+        # Before copying this file to another repo, read that repo's protection first:
+        #     gh api repos/OWNER/REPO/branches/main --jq .protection.required_status_checks
+        # (not the `/branches/main/protection` endpoint -- that one needs admin and
+        # returns 403 `Resource not accessible by integration` to App/agent tokens,
+        # which is who usually does the copying around here.)
         #
         # Calling immediately also avoids the `enablePullRequestAutoMerge`
         # "Pull request is in clean status" failure -- but the load-bearing reason is not

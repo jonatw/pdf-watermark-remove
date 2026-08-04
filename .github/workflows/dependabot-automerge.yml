@@ -9,24 +9,51 @@ jobs:
   automerge:
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # One API call now, not a 30-minute poll.
+    timeout-minutes: 5
     steps:
       - uses: dependabot/fetch-metadata@v3
         id: meta
-      - name: Merge after CI passes (patch/minor)
+      - name: Enable auto-merge (patch/minor)
         if: steps.meta.outputs.update-type != 'version-update:semver-major'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
-          CHECK: unittest
-        run: |
-          for i in $(seq 1 60); do
-            st=$(gh pr checks "$PR" -R "$GITHUB_REPOSITORY" --json name,state \
-                 -q ".[] | select(.name==\"$CHECK\") | .state" | head -1)
-            case "$st" in
-              SUCCESS) exec gh pr merge "$PR" -R "$GITHUB_REPOSITORY" --squash --auto ;;
-              FAILURE|ERROR|CANCELLED) echo "check $st — not merging"; exit 1 ;;
-            esac
-            sleep 30
-          done
-          echo "timed out waiting for $CHECK"; exit 1
+        # Renamed from "Merge after CI passes": this step does not wait for anything.
+        # `--auto` hands enforcement to GitHub, which gates on every required check plus
+        # the approval -- so the poll that used to live here added no safety on top of
+        # that, while holding a hosted runner open for up to 30 minutes per PR to watch
+        # something GitHub watches for free.
+        #
+        # !! That equivalence holds ONLY where branch protection actually requires the
+        # check, and THIS REPO did not require one until 2026-08-04. Until that day
+        # `main` here had `required_status_checks: null` and a review requirement only,
+        # meaning auto-merge would have landed a Dependabot PR the instant anyone
+        # approved -- red `unittest` included. The poll loop that used to sit here was
+        # the only thing holding a bump until CI was green.
+        #
+        # `unittest` was made a required status check specifically so that this poll
+        # could be removed. That check is now the ONLY gate between a red build and
+        # `main`. DO NOT REMOVE IT, and do not assume the arrangement is decorative
+        # because the poll is gone -- the two changes are one change.
+        #
+        # Before copying this file to another repo, read that repo's protection first:
+        #     gh api repos/OWNER/REPO/branches/main --jq .protection.required_status_checks
+        # (not the `/branches/main/protection` endpoint -- that one needs admin and
+        # returns 403 `Resource not accessible by integration` to App/agent tokens,
+        # which is who usually does the copying around here.)
+        #
+        # Calling immediately also avoids the `enablePullRequestAutoMerge`
+        # "Pull request is in clean status" failure -- but the load-bearing reason is not
+        # "checks are still pending", it is that a Dependabot PR here is BLOCKED on the
+        # required approving review from the moment it opens, so auto-merge always has
+        # something left to wait for.
+        #
+        # Trade-off accepted: a FAILING check no longer produces a red run *in this
+        # workflow*. The signal is not lost -- the CI workflow itself still goes red and
+        # still fires its event; only the messenger changes. Auto-merge never fires and
+        # the PR stays open.
+        # (No close-stale-prs.yml in this repo, so nothing GCs it either; it sits open
+        # until someone looks.)
+        #
+        run: gh pr merge "$PR" -R "$GITHUB_REPOSITORY" --squash --auto
